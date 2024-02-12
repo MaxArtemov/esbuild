@@ -79,6 +79,7 @@ package api
 import (
 	"time"
 
+	"github.com/evanw/esbuild/internal/cache"
 	"github.com/evanw/esbuild/internal/logger"
 )
 
@@ -266,6 +267,7 @@ const (
 // Build API
 
 type BuildOptions struct {
+	Caches      *cache.CacheSet
 	Color       StderrColor         // Documentation: https://esbuild.github.io/api/#color
 	LogLevel    LogLevel            // Documentation: https://esbuild.github.io/api/#log-level
 	LogLimit    int                 // Documentation: https://esbuild.github.io/api/#log-limit

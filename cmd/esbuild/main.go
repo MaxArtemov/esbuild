@@ -151,7 +151,7 @@ var helpText = func(colors logger.Colors) string {
 `
 }
 
-func main() {
+func main1() {
 	logger.API = logger.CLIAPI
 
 	osArgs := os.Args[1:]
@@ -162,6 +162,9 @@ func main() {
 	sendPings := false
 	isWatch := false
 	isWatchForever := false
+
+	// use timer always
+	api_helpers.UseTimer = true
 
 	// Do an initial scan over the argument list
 	argsEnd := 0
@@ -182,11 +185,6 @@ func main() {
 
 		case strings.HasPrefix(arg, "--trace="):
 			traceFile = arg[len("--trace="):]
-
-		case strings.HasPrefix(arg, "--timing"):
-			// This is a hidden flag because it's only intended for debugging esbuild
-			// itself. The output is not documented and not stable.
-			api_helpers.UseTimer = true
 
 		case strings.HasPrefix(arg, "--cpuprofile="):
 			cpuprofileFile = arg[len("--cpuprofile="):]

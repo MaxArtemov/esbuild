@@ -923,9 +923,13 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 	// Do not re-evaluate plugins when rebuilding. Also make sure the working
 	// directory doesn't change, since breaking that invariant would break the
 	// validation that we just did above.
-	caches := cache.MakeCacheSet()
+
+	// instead of creating cache here, we try to read it from disk and get it already initialized
+	fmt.Println("Not creating cache in contextImpl, as it should e passed from outside")
+	// caches := cache.MakeCacheSet()
+
 	log := logger.NewDeferLog(logger.DeferLogNoVerboseOrDebug, logOptions.Overrides)
-	onEndCallbacks, onDisposeCallbacks, finalizeBuildOptions := loadPlugins(&buildOpts, realFS, log, caches)
+	onEndCallbacks, onDisposeCallbacks, finalizeBuildOptions := loadPlugins(&buildOpts, realFS, log, buildOpts.Caches)
 	options, entryPoints := validateBuildOptions(buildOpts, log, realFS)
 	finalizeBuildOptions(&options)
 	if buildOpts.AbsWorkingDir != absWorkingDir {
@@ -951,7 +955,7 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 	}
 
 	args := rebuildArgs{
-		caches:             caches,
+		caches:             buildOpts.Caches,
 		onEndCallbacks:     onEndCallbacks,
 		onDisposeCallbacks: onDisposeCallbacks,
 		logOptions:         logOptions,
@@ -1668,6 +1672,7 @@ func rebuildImpl(args rebuildArgs, oldHashes map[string]string) (rebuildState, m
 
 	// Log timing information now that we're all done
 	timer.Log(log)
+	fmt.Println("logged@!")
 
 	// End the log after "OnEnd" callbacks have added any additional errors and/or
 	// warnings. This may may print any warnings that were deferred up until this
@@ -1812,6 +1817,7 @@ func transformImpl(input string, transformOpts TransformOptions) TransformResult
 		}
 
 		timer.Log(log)
+		fmt.Println("logged!")
 	}
 
 	// Return the results

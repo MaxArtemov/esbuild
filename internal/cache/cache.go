@@ -38,6 +38,14 @@ type CacheSet struct {
 	SourceIndexCache SourceIndexCache
 }
 
+func (cacheSet *CacheSet) AddJsEntry(cacheEntry *jsCacheEntry) {
+	cacheSet.JSCache.entries[cacheEntry.source.KeyPath] = cacheEntry
+}
+
+func (cacheSet *CacheSet) OverrideJsCacheEntries(jsCacheEntries *JSCacheEntries) {
+	cacheSet.JSCache.entries = jsCacheEntries.Entries
+}
+
 func MakeCacheSet() *CacheSet {
 	return &CacheSet{
 		SourceIndexCache: SourceIndexCache{

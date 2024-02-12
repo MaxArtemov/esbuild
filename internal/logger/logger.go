@@ -12,10 +12,12 @@ package logger
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -182,6 +184,34 @@ type Range struct {
 	Len int32
 }
 
+func (r *Range) ToString() string {
+	return fmt.Sprintf("%d:%d", r.Loc.Start, r.Loc.Start+r.Len)
+}
+
+func (l *Loc) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	intVal, err := strconv.Atoi(s)
+
+	if err != nil {
+		return err
+	}
+	*l = Loc{Start: int32(intVal)}
+	return nil
+}
+
+func (loc Loc) String() string {
+	return strconv.Itoa(int(loc.Start))
+}
+
+func (a Loc) MarshalJSON() ([]byte, error) {
+	var s = strconv.Itoa(int(a.Start))
+
+	return json.Marshal(s)
+}
+
 func (r Range) End() int32 {
 	return r.Loc.Start + r.Len
 }
@@ -204,6 +234,10 @@ func (a *Range) ExpandBy(b Range) {
 type Span struct {
 	Text  string
 	Range Range
+}
+
+func (s Span) ToString() string {
+	return fmt.Sprintf("%s:%s", s.Range.ToString(), s.Text)
 }
 
 // This type is just so we can use Go's native sort function
@@ -256,6 +290,10 @@ type Path struct {
 	ImportAttributes ImportAttributes
 
 	Flags PathFlags
+}
+
+func (p Path) ToString() string {
+	return fmt.Sprintf("%s:%s:%s:%s:%s", p.Namespace, p.Text, p.IgnoredSuffix, p.ImportAttributes.packedData, strconv.Itoa(int(p.Flags)))
 }
 
 // We rely on paths as map keys. Go doesn't support custom hash codes and
@@ -421,6 +459,10 @@ type Source struct {
 	KeyPath Path
 
 	Index uint32
+}
+
+func (s *Source) ToString() string {
+	return s.PrettyPath + s.IdentifierName + s.Contents + s.KeyPath.ToString() + strconv.Itoa(int(s.Index))
 }
 
 func (s *Source) TextForRange(r Range) string {

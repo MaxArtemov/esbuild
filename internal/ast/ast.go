@@ -5,7 +5,9 @@ package ast
 // a somewhat format-agnostic manner.
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/evanw/esbuild/internal/helpers"
 	"github.com/evanw/esbuild/internal/logger"
@@ -170,6 +172,35 @@ type ImportRecord struct {
 	Kind  ImportKind
 }
 
+func (record *ImportRecord) ToString() string {
+	return fmt.Sprintf(
+		"{ AssertOrWith: %s, GlobPattern: %s, Path: %s, Range: %s, ErrorHandlerLoc: %s, SourceIndex: %d, CopySourceIndex: %d, Flags: %d, Kind: %s }",
+		record.AssertOrWithToString(),
+		record.GlobPatternToString(),
+		record.Path.ToString(),
+		record.Range.ToString(),
+		record.ErrorHandlerLoc.String(),
+		record.SourceIndex,
+		record.CopySourceIndex,
+		record.Flags,
+		strconv.Itoa(int(record.Kind)),
+	)
+}
+
+func (record *ImportRecord) AssertOrWithToString() string {
+	if record.AssertOrWith != nil {
+		return record.AssertOrWith.ToString()
+	}
+	return "nil"
+}
+
+func (record *ImportRecord) GlobPatternToString() string {
+	if record.GlobPattern != nil {
+		return record.GlobPattern.ToString()
+	}
+	return "nil"
+}
+
 type AssertOrWithKeyword uint8
 
 const (
@@ -194,12 +225,44 @@ type ImportAssertOrWith struct {
 	Keyword            AssertOrWithKeyword
 }
 
+func (assertOrWith *ImportAssertOrWith) ToString() string {
+	entries := make([]string, len(assertOrWith.Entries))
+	for i, entry := range assertOrWith.Entries {
+		entries[i] = entry.ToString()
+	}
+	// TODO CHECK
+	return fmt.Sprintf(
+		"{ Entries: %s, KeywordLoc: %s, InnerOpenBraceLoc: %s, InnerCloseBraceLoc: %s, OuterOpenBraceLoc: %s, OuterCloseBraceLoc: %s, Keyword: %s }",
+		entries,
+		assertOrWith.KeywordLoc.String(),
+		assertOrWith.InnerOpenBraceLoc.String(),
+		assertOrWith.InnerCloseBraceLoc.String(),
+		assertOrWith.OuterOpenBraceLoc.String(),
+		assertOrWith.OuterCloseBraceLoc.String(),
+		assertOrWith.Keyword,
+	)
+}
+
 type AssertOrWithEntry struct {
 	Key             []uint16 // An identifier or a string
 	Value           []uint16 // Always a string
 	KeyLoc          logger.Loc
 	ValueLoc        logger.Loc
 	PreferQuotedKey bool
+}
+
+func (entry *AssertOrWithEntry) ToString() string {
+	return fmt.Sprintf(
+		"Key: %s, Value: %s, KeyLoc: %s, ValueLoc: %s, PreferQuotedKey: %t",
+		// TODO CHECK
+		helpers.UTF16ToString(entry.Key),
+		// TODO CHECK
+		helpers.UTF16ToString(entry.Value),
+		entry.KeyLoc.String(),
+		entry.ValueLoc.String(),
+		entry.PreferQuotedKey,
+	)
+
 }
 
 func FindAssertOrWithEntry(assertions []AssertOrWithEntry, name string) *AssertOrWithEntry {
@@ -215,6 +278,11 @@ type GlobPattern struct {
 	Parts       []helpers.GlobPart
 	ExportAlias string
 	Kind        ImportKind
+}
+
+func (pattern *GlobPattern) ToString() string {
+	partsStr := helpers.GlobPatternToString(pattern.Parts)
+	return fmt.Sprintf("Parts: %s, ExportAlias: %s, Kind: %s", partsStr, pattern.ExportAlias, strconv.Itoa(int(pattern.Kind)))
 }
 
 // This stores a 32-bit index where the zero value is an invalid index. This is
@@ -371,6 +439,10 @@ var InvalidRef Ref = Ref{^uint32(0), ^uint32(0)}
 type Ref struct {
 	SourceIndex uint32
 	InnerIndex  uint32
+}
+
+func (ref Ref) String() string {
+	return strconv.Itoa(int(ref.SourceIndex)) + ":" + strconv.Itoa(int(ref.InnerIndex))
 }
 
 type LocRef struct {

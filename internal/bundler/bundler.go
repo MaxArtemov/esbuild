@@ -126,6 +126,7 @@ func parseFile(args parseArgs) {
 		PrettyPath:     args.prettyPath,
 		IdentifierName: js_ast.GenerateNonUniqueNameFromPath(args.keyPath.Text),
 	}
+	// fmt.Println("parse file", args.sourceIndex, args.prettyPath)
 
 	var loader config.Loader
 	var absResolveDir string
@@ -1280,6 +1281,9 @@ func ScanBundle(
 	s.results = append(s.results, parseResult{})
 	s.remaining++
 	go func() {
+		forked := timer.Fork()
+		defer timer.Join(forked)
+		forked.Begin("Parse runtime")
 		source, ast, ok := globalRuntimeCache.parseRuntime(&options)
 		s.resultChannel <- parseResult{
 			file: scannerFile{
@@ -1293,6 +1297,7 @@ func ScanBundle(
 			},
 			ok: ok,
 		}
+		forked.End("Parse runtime")
 	}()
 
 	// Wait for all "onStart" plugins here before continuing. People sometimes run
@@ -1345,6 +1350,7 @@ func ScanBundle(
 	}
 
 	entryPointMeta := s.addEntryPoints(entryPoints)
+	fmt.Println("entypoint meta", entryPointMeta)
 
 	if options.CancelFlag.DidCancel() {
 		return Bundle{options: options}
@@ -1473,6 +1479,7 @@ func (s *scanner) maybeParseFile(
 		sideEffects.Data = resolveResult.PrimarySideEffectsData
 	}
 
+	fmt.Println("sending to parse file in separate routine", prettyPath)
 	go parseFile(parseArgs{
 		fs:              s.fs,
 		log:             s.log,
@@ -1995,6 +2002,8 @@ func (s *scanner) scanAllDependencies() {
 	s.timer.Begin("Scan all dependencies")
 	defer s.timer.End("Scan all dependencies")
 
+	fmt.Println("starting scanAllDependencies", s.results)
+
 	// Continue scanning until all dependencies have been discovered
 	for s.remaining > 0 {
 		if s.options.CancelFlag.DidCancel() {
@@ -2002,6 +2011,8 @@ func (s *scanner) scanAllDependencies() {
 		}
 
 		result := <-s.resultChannel
+		fmt.Println("scanning file", result.file.inputFile.Source.PrettyPath)
+		s.timer.Begin("Scanning" + result.file.inputFile.Source.PrettyPath)
 		s.remaining--
 		if !result.ok {
 			continue
@@ -2010,8 +2021,22 @@ func (s *scanner) scanAllDependencies() {
 		// Don't try to resolve paths if we're not bundling
 		if recordsPtr := result.file.inputFile.Repr.ImportRecords(); s.options.Mode == config.ModeBundle && recordsPtr != nil {
 			records := *recordsPtr
+			fmt.Println("going to scan import records of " + result.file.inputFile.Source.PrettyPath)
+			for _, importRecord := range records {
+				fmt.Println("importRecord!", importRecord.Path.Text)
+				if importRecord.AssertOrWith != nil && importRecord.AssertOrWith.Entries != nil {
+					entriesLen := len(importRecord.AssertOrWith.Entries)
+					fmt.Println("importRecord", importRecord.Path.Text, "entries length", entriesLen)
+					if entriesLen > 0 {
+						fmt.Println("importRecord:last", importRecord.AssertOrWith.Entries[len(importRecord.AssertOrWith.Entries)-1])
+						fmt.Println("importRecord:first", importRecord.AssertOrWith.Entries[0])
+					}
+				}
+			}
+			// fmt.Println("import records for scan - ", records)
 			for importRecordIndex := range records {
 				record := &records[importRecordIndex]
+				fmt.Println("Current record", record.Path.Text)
 
 				// This is used for error messages
 				var with *ast.ImportAssertOrWith
@@ -2022,7 +2047,9 @@ func (s *scanner) scanAllDependencies() {
 				// Skip this import record if the previous resolver call failed
 				resolveResult := result.resolveResults[importRecordIndex]
 				if resolveResult == nil {
+					fmt.Println("resolveResult is not nil for record", resolveResult)
 					if globResults := result.globResolveResults[uint32(importRecordIndex)]; globResults.resolveResults != nil {
+						fmt.Println("globResults are not empty", globResults)
 						sourceIndex := s.allocateGlobSourceIndex(result.file.inputFile.Source.Index, uint32(importRecordIndex))
 						record.SourceIndex = ast.MakeIndex32(sourceIndex)
 						s.results[sourceIndex] = s.generateResultForGlobResolve(sourceIndex, globResults.absPath,
@@ -2034,6 +2061,7 @@ func (s *scanner) scanAllDependencies() {
 				path := resolveResult.PathPair.Primary
 				if !resolveResult.PathPair.IsExternal {
 					// Handle a path within the bundle
+					fmt.Println("maybeParseFile will parse and add record to results for:", record.Path.Text)
 					sourceIndex := s.maybeParseFile(*resolveResult, resolver.PrettyPath(s.fs, path),
 						&result.file.inputFile.Source, record.Range, with, inputKindNormal, nil)
 					record.SourceIndex = ast.MakeIndex32(sourceIndex)
@@ -2064,6 +2092,7 @@ func (s *scanner) scanAllDependencies() {
 		}
 
 		s.results[result.file.inputFile.Source.Index] = result
+		s.timer.End("Scanning" + result.file.inputFile.Source.PrettyPath)
 	}
 }
 
