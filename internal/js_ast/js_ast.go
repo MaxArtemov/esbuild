@@ -1501,6 +1501,34 @@ type ModuleTypeData struct {
 	Type   ModuleType
 }
 
+func (moduleDataType ModuleTypeData) ToString() string {
+	src := moduleDataType.Source.ToString()
+	rangeStr := moduleDataType.Range.ToString()
+	moduleType := moduleDataType.Type
+	return fmt.Sprintf("source: %s range: %s type: %d", src, rangeStr, moduleType)
+}
+
+func ModuleDataTypeFromString(moduleDataTypeStr string) (ModuleTypeData, error) {
+	retModuleDataType := ModuleTypeData{}
+	var srcStr string
+	var rngStr string
+	_, err := fmt.Sscanf(moduleDataTypeStr, "source: %s range: %s type: %d", &srcStr, &rngStr, &retModuleDataType.Type)
+	if err != nil {
+		return retModuleDataType, err
+	}
+	scannedSource, err := retModuleDataType.Source.SourceFromString(srcStr)
+	if err != nil {
+		return retModuleDataType, err
+	}
+	scannedRange, err := logger.RangeFromString(rngStr)
+	if err != nil {
+		return retModuleDataType, err
+	}
+	retModuleDataType.Range = scannedRange
+	retModuleDataType.Source = &scannedSource
+	return retModuleDataType, nil
+}
+
 // This is the index to the automatically-generated part containing code that
 // calls "__export(exports, { ... getters ... })". This is used to generate
 // getters on an exports object for ES6 export statements, and is both for
@@ -1509,9 +1537,23 @@ type ModuleTypeData struct {
 const NSExportPartIndex = uint32(0)
 
 type SerializedAST struct {
+	// NOT REALLY IMPLEMENTED YET
+
+	// TODO: Check this parts when there is recursion (parent scope/children scope)
+	Parts       []Part
+	ModuleScope *Scope
+
+	// no custom logic for this
+	Symbols            []ast.Symbol
+	ManifestForYarnPnP Expr
+	CharFreq           *ast.CharFreq
+
+	// END OF NOT REALLY IMPLEMENTED YET
+
 	ExprComments                    map[string][]string
 	TopLevelSymbolToPartsFromParser map[string][]uint32
 	TSEnums                         map[string]map[string]string
+	ModuleTypeData                  string
 	// Add more fields with custom string functionality here
 	ConstValues              map[string]string
 	MangledProps             map[string]string
@@ -1533,6 +1575,10 @@ type SerializedAST struct {
 	UsesExportsRef           bool
 	UsesModuleRef            bool
 	ExportsKind              ExportsKind
+
+	Hashbang   string
+	Directives []string
+	URLForCSS  string
 }
 
 type AST struct {
@@ -1609,30 +1655,154 @@ type AST struct {
 	ExportsKind    ExportsKind
 }
 
+func (serialized *SerializedAST) DeserializeFromJson() (AST, error) {
+	var err error
+	var a AST
+	a.Parts = serialized.Parts
+	a.ExprComments = make(map[logger.Loc][]string)
+	for locStr, comments := range serialized.ExprComments {
+		loc, err := logger.LocFromString(locStr)
+		if err != nil {
+			return a, err
+		}
+		a.ExprComments[*loc] = comments
+	}
+	a.ModuleScope = serialized.ModuleScope
+	a.Symbols = serialized.Symbols
+	a.CharFreq = serialized.CharFreq
+	a.TopLevelSymbolToPartsFromParser = make(map[ast.Ref][]uint32)
+	for refStr, parts := range serialized.TopLevelSymbolToPartsFromParser {
+		var ref ast.Ref
+		ref = ref.FromString(refStr)
+		a.TopLevelSymbolToPartsFromParser[ref] = parts
+	}
+	a.ModuleTypeData, err = ModuleDataTypeFromString(serialized.ModuleTypeData)
+	if err != nil {
+		return a, err
+	}
+
+	a.TSEnums = make(map[ast.Ref]map[string]TSEnumValue)
+	for refStr, enumsMap := range serialized.TSEnums {
+		var ref ast.Ref
+		ref = ref.FromString(refStr)
+
+		for enumStr, enum := range enumsMap {
+			if a.TSEnums[ref] == nil {
+				a.TSEnums[ref] = make(map[string]TSEnumValue)
+			}
+			a.TSEnums[ref][enumStr] = EnumValFromString(enum)
+			if err != nil {
+				return a, err
+			}
+		}
+	}
+
+	a.ConstValues = make(map[ast.Ref]ConstValue)
+	for refStr, valueStr := range serialized.ConstValues {
+		var ref ast.Ref
+		var constVal ConstValue
+		ref = ref.FromString(refStr)
+		constVal, err = constVal.FromString(valueStr)
+		if err != nil {
+			return a, err
+		}
+		a.ConstValues[ref] = constVal
+	}
+
+	a.ReservedProps = serialized.ReservedProps
+	a.ImportRecords = make([]ast.ImportRecord, len(serialized.ImportRecords))
+	var impRecord ast.ImportRecord
+	for i, recordStr := range serialized.ImportRecords {
+		importRecord, err := impRecord.FromString(recordStr)
+		if err != nil {
+			return a, err
+		}
+		a.ImportRecords[i] = *importRecord
+	}
+
+	a.NamedImports = make(map[ast.Ref]NamedImport)
+	for refStr, namedImportStr := range serialized.NamedImports {
+		var ref ast.Ref
+		var named NamedImport
+		ref = ref.FromString(refStr)
+		named, err = named.FromString(namedImportStr)
+		if err != nil {
+			return a, err
+		}
+		a.NamedImports[ref] = named
+	}
+
+	a.NamedExports = make(map[string]NamedExport)
+	var named NamedExport
+	for key, namedExportStr := range serialized.NamedExports {
+		export, err := named.FromString(namedExportStr)
+		if err != nil {
+			return a, err
+		}
+		a.NamedExports[key] = *export
+	}
+
+	var ref ast.Ref
+
+	a.ExportStarImportRecords = serialized.ExportStarImportRecords
+
+	if a.SourceMapComment, err = logger.SpanFromString(serialized.SourceMapComment); err != nil {
+		return a, err
+	}
+	if a.ExportKeyword, err = logger.RangeFromString(serialized.ExportKeyword); err != nil {
+		return a, err
+	}
+	if a.TopLevelAwaitKeyword, err = logger.RangeFromString(serialized.TopLevelAwaitKeyword); err != nil {
+		return a, err
+	}
+	if a.LiveTopLevelAwaitKeyword, err = logger.RangeFromString(serialized.LiveTopLevelAwaitKeyword); err != nil {
+		return a, err
+	}
+
+	a.ExportsRef = ref.FromString(serialized.ExportsRef)
+	a.ModuleRef = ref.FromString(serialized.ModuleRef)
+	a.WrapperRef = ref.FromString(serialized.WrapperRef)
+	a.ApproximateLineCount = serialized.ApproximateLineCount
+	a.NestedScopeSlotCounts = serialized.NestedScopeSlotCounts
+	a.HasLazyExport = serialized.HasLazyExport
+	a.UsesExportsRef = serialized.UsesExportsRef
+	a.UsesModuleRef = serialized.UsesModuleRef
+	a.ExportsKind = serialized.ExportsKind
+	a.Hashbang = serialized.Hashbang
+	a.Directives = serialized.Directives
+	a.URLForCSS = serialized.URLForCSS
+	return a, nil
+}
+
 func (a AST) SerializeForJson() *SerializedAST {
 	return &SerializedAST{
 		ExprComments: func() map[string][]string {
 			result := make(map[string][]string)
 			for loc, comments := range a.ExprComments {
-				result[loc.String()] = comments
+				result[loc.ToString()] = comments
 			}
 			return result
 		}(),
+		Parts:       a.Parts,
+		ModuleScope: a.ModuleScope,
 		TopLevelSymbolToPartsFromParser: func() map[string][]uint32 {
 			result := make(map[string][]uint32)
 			for ref, parts := range a.TopLevelSymbolToPartsFromParser {
-				result[ref.String()] = parts
+				result[ref.ToString()] = parts
 			}
 			return result
 		}(),
+		CharFreq: a.CharFreq,
 		TSEnums: func() map[string]map[string]string {
 			result := make(map[string]map[string]string)
 			for ref, enumsMap := range a.TSEnums {
-				for _, enum := range enumsMap {
-					if result[ref.String()] == nil {
-						result[ref.String()] = make(map[string]string)
+				//TSEnums map[ast.Ref]map[string]TSEnumValue
+				refStr := ref.ToString()
+				for enumKey, enum := range enumsMap {
+					if result[refStr] == nil {
+						result[refStr] = make(map[string]string)
 					}
-					result[ref.String()][ToString(enum)] = ToString(enum)
+					result[refStr][enumKey] = EnumValToString(enum)
 				}
 			}
 			return result
@@ -1640,11 +1810,12 @@ func (a AST) SerializeForJson() *SerializedAST {
 		ConstValues: func() map[string]string {
 			result := make(map[string]string)
 			for ref, value := range a.ConstValues {
-				result[ref.String()] = value.ToString()
+				result[ref.ToString()] = value.ToString()
 			}
 			return result
 		}(),
-		ReservedProps: a.ReservedProps,
+		ModuleTypeData: a.ModuleTypeData.ToString(),
+		ReservedProps:  a.ReservedProps,
 		ImportRecords: func() []string {
 			var acc []string
 			for _, record := range a.ImportRecords {
@@ -1655,7 +1826,7 @@ func (a AST) SerializeForJson() *SerializedAST {
 		NamedImports: func() map[string]string {
 			result := make(map[string]string)
 			for ref, namedImport := range a.NamedImports {
-				result[ref.String()] = namedImport.ToString()
+				result[ref.ToString()] = namedImport.ToString()
 			}
 			return result
 		}(),
@@ -1666,27 +1837,28 @@ func (a AST) SerializeForJson() *SerializedAST {
 			}
 			return result
 		}(),
+		Symbols:                  a.Symbols,
 		ExportStarImportRecords:  a.ExportStarImportRecords,
 		SourceMapComment:         a.SourceMapComment.ToString(),
 		ExportKeyword:            a.ExportKeyword.ToString(),
 		TopLevelAwaitKeyword:     a.TopLevelAwaitKeyword.ToString(),
 		LiveTopLevelAwaitKeyword: a.LiveTopLevelAwaitKeyword.ToString(),
-		ExportsRef:               a.ExportsRef.String(),
-		ModuleRef:                a.ModuleRef.String(),
-		WrapperRef:               a.WrapperRef.String(),
+		ExportsRef:               a.ExportsRef.ToString(),
+		ModuleRef:                a.ModuleRef.ToString(),
+		WrapperRef:               a.WrapperRef.ToString(),
 		ApproximateLineCount:     a.ApproximateLineCount,
 		NestedScopeSlotCounts:    a.NestedScopeSlotCounts,
 		HasLazyExport:            a.HasLazyExport,
 		UsesExportsRef:           a.UsesExportsRef,
 		UsesModuleRef:            a.UsesModuleRef,
 		ExportsKind:              a.ExportsKind,
-		// AliasForAST:              (*AliasForAST)(&a),
+		Hashbang:                 a.Hashbang,
+		Directives:               a.Directives,
+		URLForCSS:                a.URLForCSS,
 	}
 }
 
 func (a AST) MarshalJSON() ([]byte, error) {
-	// type AliasForAST AST // Create an alias to avoid infinite recursion
-	// TODO CHECK IF OK AFTER moving to SerializeForJson
 	return json.Marshal(a.SerializeForJson())
 }
 
@@ -1695,15 +1867,17 @@ type TSEnumValue struct {
 	Number float64  // Use this if "String" is nil
 }
 
-func ToString(tsEnum TSEnumValue) string {
-	if tsEnum.String != nil {
-		var str string
-		for _, curInt := range tsEnum.String {
-			str += string(rune(curInt))
-		}
-	}
-	return strconv.FormatFloat(tsEnum.Number, 'g', -1, 64)
+func EnumValToString(tsEnum TSEnumValue) string {
+	return fmt.Sprintf("String: %v, Number: %v", tsEnum.String, tsEnum.Number)
+}
 
+func EnumValFromString(tsEnumStr string) TSEnumValue {
+	tsEnum := TSEnumValue{}
+	_, err := fmt.Sscanf(tsEnumStr, "String: %v, Number: %v", tsEnum.String, tsEnum.Number)
+	if err != nil {
+		fmt.Println("Error parsing TSEnumValue:", err)
+	}
+	return tsEnum
 }
 
 type ConstValueKind uint8
@@ -1723,7 +1897,12 @@ type ConstValue struct {
 }
 
 func (c ConstValue) ToString() string {
-	return fmt.Sprintf("Number: %v, Kind: %v", strconv.Itoa(int(c.Number)), strconv.Itoa(int(c.Kind)))
+	return fmt.Sprintf("Number: %v, Kind: %v", c.Number, c.Kind)
+}
+
+func (c ConstValue) FromString(formattedStr string) (ConstValue, error) {
+	fmt.Sscanf(formattedStr, "Number: %v, Kind: %v", c.Number, c.Kind)
+	return c, nil
 }
 
 func ExprToConstValue(expr Expr) ConstValue {
@@ -1803,8 +1982,82 @@ type NamedImport struct {
 	IsExported bool
 }
 
+func uintArrToString(arr []uint32) string {
+	if len(arr) == 0 {
+		return "nil"
+	}
+	var str string
+	for _, val := range arr {
+		str += fmt.Sprintf("%v ", val)
+	}
+	return str
+}
+
+func stringToUintArr(str string) []uint32 {
+	if str == "nil" {
+		return make([]uint32, 0)
+	}
+	var arr []uint32
+	_, err := fmt.Sscanf(str, "%v", &arr)
+	if err != nil {
+		fmt.Println("Error parsing uint32 array:", err)
+	}
+	return arr
+
+}
+
+var namedImportFormat = "Alias: %s LocalPartsWithUses: %s AliasLoc: %v NamespaceRef: %v ImportRecordIndex: %v AliasIsStar: %v IsExported: %v"
+
 func (n NamedImport) ToString() string {
-	return fmt.Sprintf("Alias: %s, LocalPartsWithUses: %v, AliasLoc: %v, NamespaceRef: %v, ImportRecordIndex: %v, AliasIsStar: %v, IsExported: %v", n.Alias, n.LocalPartsWithUses, n.AliasLoc.String(), n.NamespaceRef.String(), n.ImportRecordIndex, n.AliasIsStar, n.IsExported)
+	return fmt.Sprintf(namedImportFormat, n.Alias, uintArrToString(n.LocalPartsWithUses), n.AliasLoc.ToString(), n.NamespaceRef.ToString(), n.ImportRecordIndex, n.AliasIsStar, n.IsExported)
+}
+
+func (n NamedImport) FromString(importFormattedString string) (NamedImport, error) {
+	// Variables for NamedImport
+	var (
+		Alias                 string
+		LocalPartsWithUsesStr string
+		AliasLocStr           string
+		NamespaceRefStr       string
+		ImportRecordIndex     uint32
+		AliasIsStar           bool
+		IsExported            bool
+	)
+
+	// LocalPartsWithUses = stringToUintArr(importFormattedString)
+
+	// Parse NamedImport string
+	_, err := fmt.Sscanf(importFormattedString,
+		namedImportFormat,
+		&Alias, &LocalPartsWithUsesStr, &AliasLocStr, &NamespaceRefStr, &ImportRecordIndex, &AliasIsStar, &IsExported)
+
+	if err != nil {
+		fmt.Println("Error parsing NamedImport:", err)
+		return NamedImport{}, err
+	}
+
+	LocalPartsWithUses := stringToUintArr(LocalPartsWithUsesStr)
+
+	// Parse AliasLoc
+	AliasLoc, err := logger.LocFromString(AliasLocStr)
+
+	if err != nil {
+		fmt.Println("Error parsing AliasLoc:", err)
+		return NamedImport{}, err
+	}
+
+	ref := ast.Ref{}
+	NamespaceRef := ref.FromString(NamespaceRefStr)
+
+	return NamedImport{
+		Alias:              Alias,
+		LocalPartsWithUses: LocalPartsWithUses,
+		AliasLoc:           *AliasLoc,
+		NamespaceRef:       NamespaceRef,
+		ImportRecordIndex:  ImportRecordIndex,
+		AliasIsStar:        AliasIsStar,
+		IsExported:         IsExported,
+	}, nil
 }
 
 type NamedExport struct {
@@ -1813,9 +2066,29 @@ type NamedExport struct {
 }
 
 func (n NamedExport) ToString() string {
-	return fmt.Sprintf("Ref: %v, AliasLoc: %v", n.Ref.String(), n.AliasLoc.String())
+	return fmt.Sprintf("Ref: %s AliasLoc: %s", n.Ref.ToString(), n.AliasLoc.ToString())
+}
+func (n NamedExport) FromString(formattedStr string) (*NamedExport, error) {
+	var (
+		refString      string
+		aliasLocString string
+	)
+
+	fmt.Sscanf(formattedStr, "Ref: %s AliasLoc: %s", &refString, &aliasLocString)
+	ref := ast.Ref{}
+	ref = ref.FromString(refString)
+	aliasLoc, err := logger.LocFromString(aliasLocString)
+	if err != nil {
+		fmt.Println("Error parsing AliasLoc:", err)
+		return nil, err
+	}
+	return &NamedExport{
+		Ref:      ref,
+		AliasLoc: *aliasLoc,
+	}, nil
 }
 
+// TODO: SERIALIZE DIS
 // Each file is made up of multiple parts, and each part consists of one or
 // more top-level statements. Parts are used for tree shaking and code
 // splitting analysis. Individual parts of a file can be discarded by tree
@@ -1866,6 +2139,25 @@ type Part struct {
 	// algorithm.
 	IsLive bool
 }
+type SerialiezdPart struct {
+	Stmts                    []Stmt
+	Scopes                   []*Scope
+	ImportRecordIndices      []uint32
+	DeclaredSymbols          []DeclaredSymbol
+	SymbolUses               map[ast.Ref]SymbolUse
+	SymbolCallUses           map[ast.Ref]SymbolCallUse
+	ImportSymbolPropertyUses map[ast.Ref]map[string]SymbolUse
+	Dependencies             []Dependency
+
+	CanBeRemovedIfUnused bool
+	ForceTreeShaking     bool
+	IsLive               bool
+}
+
+// func (p Part) MarshalJSON() ([]byte, error) {
+
+// 	return json.Marshal(p)
+// }
 
 type Dependency struct {
 	SourceIndex uint32

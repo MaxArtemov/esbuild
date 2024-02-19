@@ -13,6 +13,7 @@ package logger
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -185,7 +186,28 @@ type Range struct {
 }
 
 func (r *Range) ToString() string {
-	return fmt.Sprintf("%d:%d", r.Loc.Start, r.Loc.Start+r.Len)
+	separator := "~!ra~"
+	return r.Loc.ToString() + separator + strconv.Itoa(int(r.Len))
+}
+
+func RangeFromString(rangeStr string) (Range, error) {
+	separator := "~!ra~"
+	parts := strings.Split(rangeStr, separator)
+	if len(parts) != 2 {
+		return Range{}, errors.New("incorrect number of params in serialize")
+	}
+	loc, err := LocFromString(parts[0])
+	if err != nil {
+		return Range{}, err
+	}
+	lenI32, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return Range{}, err
+	}
+	return Range{
+		Loc: *loc,
+		Len: int32(lenI32),
+	}, nil
 }
 
 func (l *Loc) UnmarshalJSON(b []byte) error {
@@ -202,8 +224,18 @@ func (l *Loc) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (loc Loc) String() string {
+func (loc Loc) ToString() string {
 	return strconv.Itoa(int(loc.Start))
+}
+
+func LocFromString(locString string) (*Loc, error) {
+	intVal, err := strconv.Atoi(locString)
+	if err != nil {
+		return nil, err
+	}
+	return &Loc{
+		Start: int32(intVal),
+	}, nil
 }
 
 func (a Loc) MarshalJSON() ([]byte, error) {
@@ -237,7 +269,24 @@ type Span struct {
 }
 
 func (s Span) ToString() string {
-	return fmt.Sprintf("%s:%s", s.Range.ToString(), s.Text)
+	separator := "~!sp~"
+	// TODO switch to fmt.Sprintf
+	return s.Range.ToString() + separator + s.Text
+}
+func SpanFromString(spanString string) (Span, error) {
+	separator := "~!sp~"
+	parts := strings.Split(spanString, separator)
+	if len(parts) != 2 {
+		return Span{}, errors.New("incorrect number of params in serialize")
+	}
+	rangeDes, err := RangeFromString(parts[0])
+	if err != nil {
+		return Span{}, err
+	}
+	return Span{
+		Text:  parts[1],
+		Range: rangeDes,
+	}, nil
 }
 
 // This type is just so we can use Go's native sort function
@@ -293,7 +342,32 @@ type Path struct {
 }
 
 func (p Path) ToString() string {
-	return fmt.Sprintf("%s:%s:%s:%s:%s", p.Namespace, p.Text, p.IgnoredSuffix, p.ImportAttributes.packedData, strconv.Itoa(int(p.Flags)))
+	separator := "~!pa~"
+	return p.Namespace + separator + p.Text + separator + p.IgnoredSuffix + separator + p.ImportAttributes.packedData + separator + strconv.Itoa(int(p.Flags))
+}
+
+func PathFromString(input string) (*Path, error) {
+	separator := "~!pa~"
+	// Split the input string using the specified separator
+	parts := strings.Split(input, separator)
+	retP := Path{}
+	if len(parts) != 5 {
+		return nil, fmt.Errorf("Invalid input format: %s", input)
+	}
+
+	// Parse each part and assign values to the Path fields
+	retP.Namespace = parts[0]
+	retP.Text = parts[1]
+	retP.IgnoredSuffix = parts[2]
+	retP.ImportAttributes.packedData = parts[3]
+	flags, err := strconv.Atoi(parts[4])
+
+	if err != nil {
+		return nil, err
+	}
+	retP.Flags = PathFlags(flags)
+
+	return &retP, nil
 }
 
 // We rely on paths as map keys. Go doesn't support custom hash codes and
@@ -462,7 +536,47 @@ type Source struct {
 }
 
 func (s *Source) ToString() string {
-	return s.PrettyPath + s.IdentifierName + s.Contents + s.KeyPath.ToString() + strconv.Itoa(int(s.Index))
+	if s == nil {
+		return "nil"
+	}
+	separator := "~!src~"
+	return s.PrettyPath +
+		separator +
+		s.IdentifierName +
+		separator +
+		s.Contents +
+		separator +
+		s.KeyPath.ToString() +
+		separator +
+		strconv.Itoa(int(s.Index))
+}
+func (s *Source) SourceFromString(sourceString string) (Source, error) {
+	if sourceString == "nil" {
+		return Source{}, nil
+	}
+	separator := "~!src~"
+	parts := strings.Split(sourceString, separator)
+
+	if len(parts) != 5 {
+		return Source{}, errors.New("incorrect number of params in serialize")
+	}
+	KeyPath, err := PathFromString(parts[3])
+	if err != nil {
+		return Source{}, errors.New("error parsing KeyPath")
+	}
+	indexI32, err := strconv.Atoi(parts[4])
+	if err != nil {
+		return Source{}, errors.New("error parsing index")
+	}
+	Source := Source{
+		PrettyPath:     parts[0],
+		IdentifierName: parts[1],
+		Contents:       parts[2],
+		KeyPath:        *KeyPath,
+		Index:          uint32(indexI32),
+	}
+
+	return Source, nil
 }
 
 func (s *Source) TextForRange(r Range) string {

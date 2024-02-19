@@ -172,15 +172,37 @@ func SaveCacheEntryToFile(cache *JSCache, filePath string, entryPath logger.Path
 	}
 }
 
+func parseCacheEntryFromJson(serializedCacheEntry SerializedCacheEntry) (*jsCacheEntry, error) {
+	desAst, err := serializedCacheEntry.Ast.DeserializeFromJson()
+	if err != nil {
+		fmt.Println("FUNKY ERROR IN PARSE CACHE ENTRY FROM JSON", err)
+		return nil, err
+	}
+	var cacheEntry jsCacheEntry
+	var src logger.Source
+	src, err = src.SourceFromString(serializedCacheEntry.Source)
+	if err != nil {
+		fmt.Println("Error creating source from string", err)
+		return nil, err
+	}
+	cacheEntry.ast = desAst
+	cacheEntry.source = src
+	cacheEntry.ok = serializedCacheEntry.Ok
+	cacheEntry.msgs = []logger.Msg{}
+
+	return &cacheEntry, nil
+}
+
 // Load the cache from a file
 func LoadCacheFromDir(cacheDir string, cacheSet *CacheSet) (*CacheSet, error) {
+	fmt.Println("Load cache from dir and fill initial cache!", cacheDir)
 	cacheFiles, err := os.ReadDir(cacheDir)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, file := range cacheFiles {
-		var cacheEntry jsCacheEntry
+		var serializedCacheEntry SerializedCacheEntry
 		fileInfo, err := file.Info()
 
 		if err != nil {
@@ -195,9 +217,17 @@ func LoadCacheFromDir(cacheDir string, cacheSet *CacheSet) (*CacheSet, error) {
 				fmt.Println("Error reading file info from cache", readFileErr, fileInfo)
 				return cacheSet, readFileErr
 			}
-
-			parseErr := json.Unmarshal(contents, &cacheEntry)
-			cacheSet.AddJsEntry(&cacheEntry)
+			fmt.Println("contents", string(contents))
+			fmt.Println("Empty entry", serializedCacheEntry)
+			parseErr := json.Unmarshal(contents, &serializedCacheEntry)
+			cacheEntry, err := parseCacheEntryFromJson(serializedCacheEntry)
+			if err != nil {
+				fmt.Println("Error parsing cache entry from json", err)
+				panic(err)
+				return cacheSet, err
+			}
+			fmt.Println("Full entry after deserializing", cacheEntry)
+			cacheSet.AddJsEntry(cacheEntry)
 
 			if parseErr != nil {
 				fmt.Println("Parse errror (Unmarshal)", parseErr)
@@ -225,6 +255,10 @@ type SerializedCacheEntry struct {
 	Msgs   []string
 }
 
+func (s SerializedCacheEntry) ToCacheEntry() jsCacheEntry {
+	return jsCacheEntry{}
+}
+
 func (c jsCacheEntry) MarshalJSON() ([]byte, error) {
 	serializedAst := c.ast.SerializeForJson()
 	cacheEntry := SerializedCacheEntry{
@@ -233,8 +267,32 @@ func (c jsCacheEntry) MarshalJSON() ([]byte, error) {
 		Ok:     c.ok,
 		Msgs:   []string{"first", "second", "third"},
 	}
-	fmt.Println("serilaized cacheEntry", cacheEntry)
-	return json.Marshal(cacheEntry)
+	fmt.Println("serilaized cacheEntry before marshaling to json", cacheEntry)
+	content, err := json.Marshal(cacheEntry)
+	if err != nil {
+		fmt.Println("Error marshalling cache entry to json", err)
+	}
+	return content, err
+}
+
+func (c *jsCacheEntry) UnmarshalJSON(b []byte) error {
+	// TODO: make desirailzation from json work here
+	serializedCacheEntry := SerializedCacheEntry{}
+	err := json.Unmarshal(b, &serializedCacheEntry)
+	if err != nil {
+		return err
+	}
+	fmt.Println("serilaized cacheEntry after Unmarshaling from json", serializedCacheEntry)
+
+	cacheEntry, err := parseCacheEntryFromJson(serializedCacheEntry)
+
+	if err != nil {
+		fmt.Println("Error parsing cache entry from json", err)
+		return err
+	}
+	c = cacheEntry
+	fmt.Println("bytesToString", string(b))
+	return nil
 }
 
 func (c *jsCacheEntry) getJsonPath() string {
@@ -278,14 +336,19 @@ func (c *JSCache) Parse(log logger.Log, source logger.Source, options js_parser.
 	}()
 
 	// Cache hit
-	if entry != nil && entry.source == source && entry.options.Equal(&options) {
+	// TODO: this is the original check - if entry != nil && entry.source == source && entry.options.Equal(&options) { (including options) }
+	// We remove the options as serializing it would take a lot of time and for a POC its redundant. cache will be shared in between
+	// builds with different options which is incorrect but for the sake of POC we will ignore it.
+	if entry != nil && entry.source == source {
 		for _, msg := range entry.msgs {
 			log.AddMsg(msg)
 		}
+		fmt.Println("Cache HIT :)", entry.source)
 		return entry.ast, entry.ok
 	}
 
 	// Cache miss
+	fmt.Println("Cache MISS :)", source)
 	tempLog := logger.NewDeferLog(logger.DeferLogAll, log.Overrides)
 	ast, ok := js_parser.Parse(tempLog, source, options)
 	msgs := tempLog.Done()

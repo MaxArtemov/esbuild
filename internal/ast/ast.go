@@ -173,18 +173,99 @@ type ImportRecord struct {
 }
 
 func (record *ImportRecord) ToString() string {
+	template := "{ AssertOrWith: %s GlobPattern: %s Path: %s Range: %s ErrorHandlerLoc: %s SourceIndex: %d CopySourceIndex: %d Flags: %d Kind: %s }"
+
 	return fmt.Sprintf(
-		"{ AssertOrWith: %s, GlobPattern: %s, Path: %s, Range: %s, ErrorHandlerLoc: %s, SourceIndex: %d, CopySourceIndex: %d, Flags: %d, Kind: %s }",
+		template,
 		record.AssertOrWithToString(),
 		record.GlobPatternToString(),
 		record.Path.ToString(),
 		record.Range.ToString(),
-		record.ErrorHandlerLoc.String(),
-		record.SourceIndex,
-		record.CopySourceIndex,
+		record.ErrorHandlerLoc.ToString(),
+		record.SourceIndex.flippedBits,
+		record.CopySourceIndex.flippedBits,
 		record.Flags,
 		strconv.Itoa(int(record.Kind)),
 	)
+}
+
+func (record *ImportRecord) FromString(formattedString string) (*ImportRecord, error) {
+	var (
+		AssertOrWithStr    string
+		GlobPatternStr     string
+		PathStr            string
+		RangeStr           string
+		ErrorHandlerLocStr string
+		SourceIndex        int
+		CopySourceIndex    int
+		Flags              int
+		KindStr            string
+	)
+
+	_, err := fmt.Sscanf(
+		formattedString,
+		"{ AssertOrWith: %s GlobPattern: %s Path: %s Range: %s ErrorHandlerLoc: %s SourceIndex: %d CopySourceIndex: %d Flags: %d Kind: %s }",
+		&AssertOrWithStr,
+		&GlobPatternStr,
+		&PathStr,
+		&RangeStr,
+		&ErrorHandlerLocStr,
+		&SourceIndex,
+		&CopySourceIndex,
+		&Flags,
+		&KindStr,
+	)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+	// If you need to convert Kind back to its original type, you can use strconv.Atoi
+	Kind, err := strconv.Atoi(KindStr)
+	if err != nil {
+		fmt.Println("Error converting Kind:", err)
+		return nil, err
+	}
+	path, pathErr := logger.PathFromString(PathStr)
+	if pathErr != nil {
+		fmt.Println("Error converting Kind:", pathErr)
+		return nil, err
+	}
+	rangeT, rangeErr := logger.RangeFromString(RangeStr)
+	if rangeErr != nil {
+		fmt.Println("Error converting Range:", rangeErr)
+		return nil, err
+	}
+	errorHandlerLoc, errorHandlerLocErr := logger.LocFromString(ErrorHandlerLocStr)
+	if errorHandlerLocErr != nil {
+		fmt.Println("Error converting ErrorHandlerLoc:", errorHandlerLocErr)
+		return nil, err
+	}
+
+	asertOrWith := &ImportAssertOrWith{}
+	assertOrWith, err := asertOrWith.FromString(AssertOrWithStr)
+	if err != nil {
+		fmt.Println("Error converting AssertOrWith:", err)
+		return nil, err
+	}
+
+	globPattern := &GlobPattern{}
+	globPattern, err = globPattern.FromString(GlobPatternStr)
+	if err != nil {
+		fmt.Println("Error converting GlobPattern:", err)
+		return nil, err
+	}
+
+	return &ImportRecord{
+		AssertOrWith:    assertOrWith,
+		GlobPattern:     globPattern, // TODO
+		Path:            *path,
+		Range:           rangeT,
+		ErrorHandlerLoc: *errorHandlerLoc,
+		SourceIndex:     Index32{flippedBits: uint32(SourceIndex)},     // use flipped bits directly because we serialize it this way
+		CopySourceIndex: Index32{flippedBits: uint32(CopySourceIndex)}, // use flipped bits directly because we serialize it this way
+		Flags:           ImportRecordFlags(Flags),
+		Kind:            ImportKind(Kind),
+	}, nil
 }
 
 func (record *ImportRecord) AssertOrWithToString() string {
@@ -232,15 +313,112 @@ func (assertOrWith *ImportAssertOrWith) ToString() string {
 	}
 	// TODO CHECK
 	return fmt.Sprintf(
-		"{ Entries: %s, KeywordLoc: %s, InnerOpenBraceLoc: %s, InnerCloseBraceLoc: %s, OuterOpenBraceLoc: %s, OuterCloseBraceLoc: %s, Keyword: %s }",
+		"{ Entries: %s KeywordLoc: %s InnerOpenBraceLoc: %s InnerCloseBraceLoc: %s OuterOpenBraceLoc: %s OuterCloseBraceLoc: %s Keyword: %s }",
 		entries,
-		assertOrWith.KeywordLoc.String(),
-		assertOrWith.InnerOpenBraceLoc.String(),
-		assertOrWith.InnerCloseBraceLoc.String(),
-		assertOrWith.OuterOpenBraceLoc.String(),
-		assertOrWith.OuterCloseBraceLoc.String(),
+		assertOrWith.KeywordLoc.ToString(),
+		assertOrWith.InnerOpenBraceLoc.ToString(),
+		assertOrWith.InnerCloseBraceLoc.ToString(),
+		assertOrWith.OuterOpenBraceLoc.ToString(),
+		assertOrWith.OuterCloseBraceLoc.ToString(),
 		assertOrWith.Keyword,
 	)
+}
+func (assertOrWith *ImportAssertOrWith) FromString(formattedString string) (*ImportAssertOrWith, error) {
+	if formattedString == "nil" {
+		return nil, nil
+	}
+	var (
+		EntriesStr            []string
+		KeywordLocStr         string
+		InnerOpenBraceLocStr  string
+		InnerCloseBraceLocStr string
+		OuterOpenBraceLocStr  string
+		OuterCloseBraceLocStr string
+		Keyword               string
+	)
+
+	_, err := fmt.Sscanf(
+		formattedString,
+		"{ Entries: %s KeywordLoc: %s InnerOpenBraceLoc: %s InnerCloseBraceLoc: %s OuterOpenBraceLoc: %s OuterCloseBraceLoc: %s Keyword: %s }",
+		&EntriesStr,
+		&KeywordLocStr,
+		&InnerOpenBraceLocStr,
+		&InnerCloseBraceLocStr,
+		&OuterOpenBraceLocStr,
+		&OuterCloseBraceLocStr,
+		&Keyword,
+	)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	KeywordLoc, err := logger.LocFromString(Keyword)
+
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	InnerOpenBraceLoc, err := logger.LocFromString(InnerOpenBraceLocStr)
+
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	InnerCloseBraceLoc, err := logger.LocFromString(InnerCloseBraceLocStr)
+
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	OuterOpenBraceLoc, err := logger.LocFromString(OuterOpenBraceLocStr)
+
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	OuterCloseBraceLoc, err := logger.LocFromString(OuterCloseBraceLocStr)
+
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	fmt.Println("Entries:", EntriesStr)
+	fmt.Println("Keyword:", Keyword)
+
+	// Entries            []AssertOrWithEntry
+
+	KeywordUint, err := strconv.Atoi(Keyword)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	Entries := make([]AssertOrWithEntry, len(EntriesStr))
+	Entry := AssertOrWithEntry{}
+	for _, entry := range EntriesStr {
+		newEntry, err := Entry.FromString(entry)
+		if err != nil {
+			fmt.Println("Error parsing:", err)
+			return nil, err
+		}
+		Entries = append(Entries, *newEntry)
+	}
+
+	return &ImportAssertOrWith{
+		Entries:            Entries,
+		KeywordLoc:         *KeywordLoc,
+		InnerOpenBraceLoc:  *InnerOpenBraceLoc,
+		InnerCloseBraceLoc: *InnerCloseBraceLoc,
+		OuterOpenBraceLoc:  *OuterOpenBraceLoc,
+		OuterCloseBraceLoc: *OuterCloseBraceLoc,
+		Keyword:            AssertOrWithKeyword(uint8(KeywordUint)),
+	}, nil
 }
 
 type AssertOrWithEntry struct {
@@ -258,11 +436,59 @@ func (entry *AssertOrWithEntry) ToString() string {
 		helpers.UTF16ToString(entry.Key),
 		// TODO CHECK
 		helpers.UTF16ToString(entry.Value),
-		entry.KeyLoc.String(),
-		entry.ValueLoc.String(),
+		entry.KeyLoc.ToString(),
+		entry.ValueLoc.ToString(),
 		entry.PreferQuotedKey,
 	)
+}
 
+func (entry *AssertOrWithEntry) FromString(formattedString string) (*AssertOrWithEntry, error) {
+
+	var (
+		KeyStr          string
+		ValueStr        string
+		KeyLocStr       string
+		ValueLocStr     string
+		PreferQuotedKey bool
+	)
+
+	_, err := fmt.Sscanf(
+		formattedString,
+		"Key: %s, Value: %s, KeyLoc: %s, ValueLoc: %s, PreferQuotedKey: %t",
+		&KeyStr,
+		&ValueStr,
+		&KeyLocStr,
+		&ValueLocStr,
+		&PreferQuotedKey,
+	)
+
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	uintKey := helpers.StringToUTF16(KeyStr)
+	uintValue := helpers.StringToUTF16(ValueStr)
+
+	keyLoc, err := logger.LocFromString(KeyLocStr)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	valueLoc, err := logger.LocFromString(ValueLocStr)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	return &AssertOrWithEntry{
+		Key:             uintKey,
+		Value:           uintValue,
+		KeyLoc:          *keyLoc,
+		ValueLoc:        *valueLoc,
+		PreferQuotedKey: PreferQuotedKey,
+	}, nil
 }
 
 func FindAssertOrWithEntry(assertions []AssertOrWithEntry, name string) *AssertOrWithEntry {
@@ -282,7 +508,38 @@ type GlobPattern struct {
 
 func (pattern *GlobPattern) ToString() string {
 	partsStr := helpers.GlobPatternToString(pattern.Parts)
-	return fmt.Sprintf("Parts: %s, ExportAlias: %s, Kind: %s", partsStr, pattern.ExportAlias, strconv.Itoa(int(pattern.Kind)))
+	return fmt.Sprintf("Parts: %s ExportAlias: %s Kind: %v", partsStr, pattern.ExportAlias, pattern.Kind)
+}
+
+func (pattern *GlobPattern) FromString(formattedString string) (*GlobPattern, error) {
+	if formattedString == "nil" {
+		return nil, nil
+	}
+	var (
+		PartsStr    string
+		ExportAlias string
+		Kind        ImportKind
+	)
+
+	_, err := fmt.Sscanf(
+		formattedString,
+		"Parts: %s ExportAlias: %s Kind: %s",
+		&PartsStr,
+		&ExportAlias,
+		&Kind,
+	)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	parts := helpers.ParseGlobPattern(PartsStr)
+
+	return &GlobPattern{
+		Parts:       parts,
+		ExportAlias: ExportAlias,
+		Kind:        ImportKind(Kind),
+	}, nil
 }
 
 // This stores a 32-bit index where the zero value is an invalid index. This is
@@ -441,8 +698,19 @@ type Ref struct {
 	InnerIndex  uint32
 }
 
-func (ref Ref) String() string {
-	return strconv.Itoa(int(ref.SourceIndex)) + ":" + strconv.Itoa(int(ref.InnerIndex))
+func (ref Ref) MarshalJSON() ([]byte, error) {
+	return []byte(ref.ToString()), nil
+}
+
+func (ref Ref) ToString() string {
+	return fmt.Sprintf("%d!~!%d", ref.SourceIndex, ref.InnerIndex)
+}
+
+func (ref Ref) FromString(formattedString string) Ref {
+	format := "%d!~!%d"
+	retRef := Ref{}
+	fmt.Sscanf(formattedString, format, &retRef.SourceIndex, &retRef.InnerIndex)
+	return retRef
 }
 
 type LocRef struct {
