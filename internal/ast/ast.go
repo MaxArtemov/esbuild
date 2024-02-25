@@ -698,10 +698,6 @@ type Ref struct {
 	InnerIndex  uint32
 }
 
-func (ref Ref) MarshalJSON() ([]byte, error) {
-	return []byte(ref.ToString()), nil
-}
-
 func (ref Ref) ToString() string {
 	return fmt.Sprintf("%d!~!%d", ref.SourceIndex, ref.InnerIndex)
 }

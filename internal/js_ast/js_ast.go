@@ -3,6 +3,7 @@ package js_ast
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 
 	"github.com/evanw/esbuild/internal/ast"
@@ -394,6 +395,51 @@ type Binding struct {
 	Loc  logger.Loc
 }
 
+var bindingMapping map[string]B
+
+func (b Binding) MarshalJSON() ([]byte, error) {
+	// TODO: check for recursive statements (e.g. SBlock)
+	concreteType := reflect.TypeOf(b.Data).String() // same as using fmt. %T
+
+	fmt.Println("MarshalJSON of binding")
+	// typeName := fmt.Sprintf("%T", s.Data)
+
+	val, err := json.Marshal(&struct {
+		TypeName string
+		Loc      logger.Loc
+		Data     B
+	}{
+		TypeName: concreteType,
+		Loc:      b.Loc,
+		Data:     b.Data,
+	})
+	if err != nil {
+		fmt.Println("Error marshaling binding with name", err)
+		return []byte{}, err
+	}
+	return val, nil
+}
+
+func (s *Binding) UnmarshalJSON(data []byte) error {
+	// TODO: check for recursive statements
+	raw := RawStmt{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		fmt.Println("Error Unmarshalling binding with name", err)
+		return err
+	}
+	typePointer := bindingMapping[raw.TypeName]
+	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(B)
+	err2 := json.Unmarshal(raw.Data, &val)
+	if err2 != nil {
+		fmt.Println("Error Unmarshalling binding with name", err2)
+		return err2
+	}
+	s.Data = val
+	s.Loc = raw.Loc
+	return nil
+}
+
 // This interface is never called. Its purpose is to encode a variant type in
 // Go's type system.
 type B interface{ isBinding() }
@@ -423,6 +469,61 @@ type BObject struct {
 type Expr struct {
 	Data E
 	Loc  logger.Loc
+}
+
+var exprMapping map[string]E
+
+func (e Expr) MarshalJSON() ([]byte, error) {
+	// TODO: check for recursive statements (e.g. SBlock)
+	concreteType := ""
+	if e.Data != nil {
+		concreteType = reflect.TypeOf(e.Data).String() // same as using fmt. %T
+	}
+
+	fmt.Println("MarshalJSON of experession")
+	// typeName := fmt.Sprintf("%T", s.Data)
+
+	val, err := json.Marshal(&struct {
+		TypeName string
+		Loc      logger.Loc
+		Data     E
+	}{
+		TypeName: concreteType,
+		Loc:      e.Loc,
+		Data:     e.Data,
+	})
+	if err != nil {
+		fmt.Println("Error marshaling expr with name", err)
+		return []byte{}, err
+	}
+	return val, nil
+}
+
+func (e *Expr) UnmarshalJSON(data []byte) error {
+	// TODO: check for recursive statements
+	raw := RawStmt{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err)
+		return err
+	}
+	if raw.TypeName == "" {
+		fmt.Println("Expression with no type (no data field) unmarshaled.")
+		e.Data = nil
+		e.Loc = raw.Loc
+		return nil
+	}
+
+	typePointer := exprMapping[raw.TypeName]
+	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(E)
+	err2 := json.Unmarshal(raw.Data, &val)
+	if err2 != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err2)
+		return err2
+	}
+	e.Data = val
+	e.Loc = raw.Loc
+	return nil
 }
 
 // This interface is never called. Its purpose is to encode a variant type in
@@ -902,6 +1003,143 @@ type EImportCall struct {
 type Stmt struct {
 	Data S
 	Loc  logger.Loc
+}
+
+type RawStmt struct {
+	Data     json.RawMessage // delay parsing until we type to create
+	Loc      logger.Loc
+	TypeName string
+}
+
+var mapping map[string]S
+
+func init() {
+	mapping = make(map[string]S)
+	mapping[reflect.TypeOf(&SBlock{}).String()] = &SBlock{}
+	mapping[reflect.TypeOf(&SComment{}).String()] = &SComment{}
+	mapping[reflect.TypeOf(&SDebugger{}).String()] = &SDebugger{}
+	mapping[reflect.TypeOf(&SDirective{}).String()] = &SDirective{}
+	mapping[reflect.TypeOf(&SEmpty{}).String()] = &SEmpty{}
+	mapping[reflect.TypeOf(&STypeScript{}).String()] = &STypeScript{}
+	mapping[reflect.TypeOf(&SExportClause{}).String()] = &SExportClause{}
+	mapping[reflect.TypeOf(&SExportFrom{}).String()] = &SExportFrom{}
+	mapping[reflect.TypeOf(&SExportDefault{}).String()] = &SExportDefault{}
+	mapping[reflect.TypeOf(&SExportStar{}).String()] = &SExportStar{}
+	mapping[reflect.TypeOf(&SExportEquals{}).String()] = &SExportEquals{}
+	mapping[reflect.TypeOf(&SLazyExport{}).String()] = &SLazyExport{}
+	mapping[reflect.TypeOf(&SExpr{}).String()] = &SExpr{}
+	mapping[reflect.TypeOf(&SEnum{}).String()] = &SEnum{}
+	mapping[reflect.TypeOf(&SNamespace{}).String()] = &SNamespace{}
+	mapping[reflect.TypeOf(&SFunction{}).String()] = &SFunction{}
+	mapping[reflect.TypeOf(&SClass{}).String()] = &SClass{}
+	mapping[reflect.TypeOf(&SLabel{}).String()] = &SLabel{}
+	mapping[reflect.TypeOf(&SIf{}).String()] = &SIf{}
+	mapping[reflect.TypeOf(&SFor{}).String()] = &SFor{}
+	mapping[reflect.TypeOf(&SForIn{}).String()] = &SForIn{}
+	mapping[reflect.TypeOf(&SForOf{}).String()] = &SForOf{}
+	mapping[reflect.TypeOf(&SDoWhile{}).String()] = &SDoWhile{}
+	mapping[reflect.TypeOf(&SWhile{}).String()] = &SWhile{}
+	mapping[reflect.TypeOf(&SWith{}).String()] = &SWith{}
+	mapping[reflect.TypeOf(&STry{}).String()] = &STry{}
+	mapping[reflect.TypeOf(&SSwitch{}).String()] = &SSwitch{}
+	mapping[reflect.TypeOf(&SImport{}).String()] = &SImport{}
+	mapping[reflect.TypeOf(&SReturn{}).String()] = &SReturn{}
+	mapping[reflect.TypeOf(&SThrow{}).String()] = &SThrow{}
+	mapping[reflect.TypeOf(&SLocal{}).String()] = &SLocal{}
+	mapping[reflect.TypeOf(&SBreak{}).String()] = &SBreak{}
+	mapping[reflect.TypeOf(&SContinue{}).String()] = &SContinue{}
+
+	// **************************************************************** //
+	bindingMapping = make(map[string]B)
+	bindingMapping[reflect.TypeOf(&BMissing{}).String()] = &BMissing{}
+	bindingMapping[reflect.TypeOf(&BIdentifier{}).String()] = &BIdentifier{}
+	bindingMapping[reflect.TypeOf(&BArray{}).String()] = &BArray{}
+	bindingMapping[reflect.TypeOf(&BObject{}).String()] = &BObject{}
+
+	// **************************************************************** //
+	exprMapping = make(map[string]E)
+	exprMapping[reflect.TypeOf(&EArray{}).String()] = &EArray{}
+	exprMapping[reflect.TypeOf(&EUnary{}).String()] = &EUnary{}
+	exprMapping[reflect.TypeOf(&EBinary{}).String()] = &EBinary{}
+	exprMapping[reflect.TypeOf(&EBoolean{}).String()] = &EBoolean{}
+	exprMapping[reflect.TypeOf(&ESuper{}).String()] = &ESuper{}
+	exprMapping[reflect.TypeOf(&ENull{}).String()] = &ENull{}
+	exprMapping[reflect.TypeOf(&EUndefined{}).String()] = &EUndefined{}
+	exprMapping[reflect.TypeOf(&EThis{}).String()] = &EThis{}
+	exprMapping[reflect.TypeOf(&ENewTarget{}).String()] = &ENewTarget{}
+	exprMapping[reflect.TypeOf(&EImportMeta{}).String()] = &EImportMeta{}
+	exprMapping[reflect.TypeOf(&ECall{}).String()] = &ECall{}
+	exprMapping[reflect.TypeOf(&EDot{}).String()] = &EDot{}
+	exprMapping[reflect.TypeOf(&EIndex{}).String()] = &EIndex{}
+	exprMapping[reflect.TypeOf(&EArrow{}).String()] = &EArrow{}
+	exprMapping[reflect.TypeOf(&EFunction{}).String()] = &EFunction{}
+	exprMapping[reflect.TypeOf(&EClass{}).String()] = &EClass{}
+	exprMapping[reflect.TypeOf(&EIdentifier{}).String()] = &EIdentifier{}
+	exprMapping[reflect.TypeOf(&EImportIdentifier{}).String()] = &EImportIdentifier{}
+	exprMapping[reflect.TypeOf(&EPrivateIdentifier{}).String()] = &EPrivateIdentifier{}
+	exprMapping[reflect.TypeOf(&ENameOfSymbol{}).String()] = &ENameOfSymbol{}
+	exprMapping[reflect.TypeOf(&EJSXElement{}).String()] = &EJSXElement{}
+	exprMapping[reflect.TypeOf(&EJSXText{}).String()] = &EJSXText{}
+	exprMapping[reflect.TypeOf(&EMissing{}).String()] = &EMissing{}
+	exprMapping[reflect.TypeOf(&ENumber{}).String()] = &ENumber{}
+	exprMapping[reflect.TypeOf(&EBigInt{}).String()] = &EBigInt{}
+	exprMapping[reflect.TypeOf(&EObject{}).String()] = &EObject{}
+	exprMapping[reflect.TypeOf(&ESpread{}).String()] = &ESpread{}
+	exprMapping[reflect.TypeOf(&EString{}).String()] = &EString{}
+	exprMapping[reflect.TypeOf(&ETemplate{}).String()] = &ETemplate{}
+	exprMapping[reflect.TypeOf(&ERegExp{}).String()] = &ERegExp{}
+	exprMapping[reflect.TypeOf(&EInlinedEnum{}).String()] = &EInlinedEnum{}
+	exprMapping[reflect.TypeOf(&EAnnotation{}).String()] = &EAnnotation{}
+	exprMapping[reflect.TypeOf(&EAwait{}).String()] = &EAwait{}
+	exprMapping[reflect.TypeOf(&EYield{}).String()] = &EYield{}
+	exprMapping[reflect.TypeOf(&EIf{}).String()] = &EIf{}
+	exprMapping[reflect.TypeOf(&ERequireString{}).String()] = &ERequireString{}
+	exprMapping[reflect.TypeOf(&ERequireResolveString{}).String()] = &ERequireResolveString{}
+	exprMapping[reflect.TypeOf(&EImportString{}).String()] = &EImportString{}
+	exprMapping[reflect.TypeOf(&EImportCall{}).String()] = &EImportCall{}
+}
+
+func (s Stmt) MarshalJSON() ([]byte, error) {
+	// TODO: check for recursive statements (e.g. SBlock)
+	concreteType := reflect.TypeOf(s.Data).String() // same as using fmt. %T
+
+	fmt.Println("MarshalJSON of stmt")
+	// typeName := fmt.Sprintf("%T", s.Data)
+
+	val, err := json.Marshal(&struct {
+		TypeName string
+		Loc      logger.Loc
+		Data     S
+	}{
+		TypeName: concreteType,
+		Loc:      s.Loc,
+		Data:     s.Data,
+	})
+	if err != nil {
+		fmt.Println("Error marshaling stmt with name", err)
+		return []byte{}, err
+	}
+	return val, nil
+}
+
+func (s *Stmt) UnmarshalJSON(data []byte) error {
+	// TODO: check for recursive statements
+	raw := RawStmt{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err)
+		return err
+	}
+	typePointer := mapping[raw.TypeName]
+	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(S)
+	err2 := json.Unmarshal(raw.Data, &val)
+	if err2 != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err2)
+		return err2
+	}
+	s.Data = val
+	s.Loc = raw.Loc
+	return nil
 }
 
 // This interface is never called. Its purpose is to encode a variant type in
@@ -1540,7 +1778,7 @@ type SerializedAST struct {
 	// NOT REALLY IMPLEMENTED YET
 
 	// TODO: Check this parts when there is recursion (parent scope/children scope)
-	Parts       []Part
+	Parts       []SerialiezdPart
 	ModuleScope *Scope
 
 	// no custom logic for this
@@ -1658,7 +1896,6 @@ type AST struct {
 func (serialized *SerializedAST) DeserializeFromJson() (AST, error) {
 	var err error
 	var a AST
-	a.Parts = serialized.Parts
 	a.ExprComments = make(map[logger.Loc][]string)
 	for locStr, comments := range serialized.ExprComments {
 		loc, err := logger.LocFromString(locStr)
@@ -1771,6 +2008,13 @@ func (serialized *SerializedAST) DeserializeFromJson() (AST, error) {
 	a.Hashbang = serialized.Hashbang
 	a.Directives = serialized.Directives
 	a.URLForCSS = serialized.URLForCSS
+	a.Parts = make([]Part, len(serialized.Parts))
+	for i, part := range serialized.Parts {
+		a.Parts[i] = DeserializePart(part)
+		if err != nil {
+			return a, err
+		}
+	}
 	return a, nil
 }
 
@@ -1783,7 +2027,13 @@ func (a AST) SerializeForJson() *SerializedAST {
 			}
 			return result
 		}(),
-		Parts:       a.Parts,
+		Parts: func() []SerialiezdPart {
+			var acc []SerialiezdPart
+			for _, part := range a.Parts {
+				acc = append(acc, SerializePart(part))
+			}
+			return acc
+		}(),
 		ModuleScope: a.ModuleScope,
 		TopLevelSymbolToPartsFromParser: func() map[string][]uint32 {
 			result := make(map[string][]uint32)
@@ -2144,9 +2394,9 @@ type SerialiezdPart struct {
 	Scopes                   []*Scope
 	ImportRecordIndices      []uint32
 	DeclaredSymbols          []DeclaredSymbol
-	SymbolUses               map[ast.Ref]SymbolUse
-	SymbolCallUses           map[ast.Ref]SymbolCallUse
-	ImportSymbolPropertyUses map[ast.Ref]map[string]SymbolUse
+	SymbolUses               map[string]SymbolUse
+	SymbolCallUses           map[string]SymbolCallUse
+	ImportSymbolPropertyUses map[string]map[string]SymbolUse
 	Dependencies             []Dependency
 
 	CanBeRemovedIfUnused bool
@@ -2154,10 +2404,88 @@ type SerialiezdPart struct {
 	IsLive               bool
 }
 
-// func (p Part) MarshalJSON() ([]byte, error) {
+func DeserializePart(serializedPart SerialiezdPart) Part {
+	SymbolUses := make(map[ast.Ref]SymbolUse)
+	SymbolCallUses := make(map[ast.Ref]SymbolCallUse)
+	ImportSymbolPropertyUses := make(map[ast.Ref]map[string]SymbolUse)
+	for key, value := range serializedPart.SymbolUses {
+		var ref ast.Ref
+		// TODO: maybe cast value here if it will desrialize directly to SymbolUse
+		SymbolUses[ref.FromString(key)] = value
+	}
+	for key, value := range serializedPart.SymbolCallUses {
+		var ref ast.Ref
+		// TODO: maybe cast value here if it will desrialize directly to SymbolUse
+		SymbolCallUses[ref.FromString(key)] = value
+	}
+	for key, value := range serializedPart.ImportSymbolPropertyUses {
+		var ref ast.Ref
+		innerMap := make(map[string]SymbolUse)
+		for innerKey, innerValue := range value {
+			innerMap[innerKey] = innerValue // SymbolUse{CountEstimate: innerValue}
+		}
+		ImportSymbolPropertyUses[ref.FromString(key)] = innerMap
+	}
+	return Part{
+		Stmts:                    serializedPart.Stmts,
+		Scopes:                   serializedPart.Scopes,
+		ImportRecordIndices:      serializedPart.ImportRecordIndices,
+		DeclaredSymbols:          serializedPart.DeclaredSymbols,
+		SymbolUses:               SymbolUses,
+		SymbolCallUses:           SymbolCallUses,
+		ImportSymbolPropertyUses: ImportSymbolPropertyUses,
 
-// 	return json.Marshal(p)
-// }
+		Dependencies:         serializedPart.Dependencies,
+		CanBeRemovedIfUnused: serializedPart.CanBeRemovedIfUnused,
+		ForceTreeShaking:     serializedPart.ForceTreeShaking,
+		IsLive:               serializedPart.IsLive,
+	}
+}
+
+func SerializePart(part Part) SerialiezdPart {
+	symbolCallUseInterfaceMap := make(map[string]SymbolCallUse)
+
+	for key, value := range part.SymbolCallUses {
+		// TODO: maybe cast value here if it will desrialize directly to SymbolUse
+		symbolCallUseInterfaceMap[key.ToString()] = value
+	}
+
+	return SerialiezdPart{
+		Stmts:                    part.Stmts,
+		Scopes:                   part.Scopes,
+		ImportRecordIndices:      part.ImportRecordIndices,
+		DeclaredSymbols:          part.DeclaredSymbols,
+		SymbolUses:               convertRefMapToStringMap(part.SymbolUses),
+		SymbolCallUses:           symbolCallUseInterfaceMap,
+		ImportSymbolPropertyUses: convertRefMapOfMapsToStringMapOfMaps(part.ImportSymbolPropertyUses),
+
+		Dependencies:         part.Dependencies,
+		CanBeRemovedIfUnused: part.CanBeRemovedIfUnused,
+		ForceTreeShaking:     part.ForceTreeShaking,
+		IsLive:               part.IsLive,
+	}
+}
+
+func convertRefMapToStringMap(inputMap map[ast.Ref]SymbolUse) map[string]SymbolUse {
+	resultMap := make(map[string]SymbolUse)
+	for key, value := range inputMap {
+		resultMap[key.ToString()] = value
+	}
+	return resultMap
+}
+
+// uint32 instead of SymbolUse
+func convertRefMapOfMapsToStringMapOfMaps(inputMap map[ast.Ref]map[string]SymbolUse) map[string]map[string]SymbolUse {
+	resultMap := make(map[string]map[string]SymbolUse)
+	for key, innerMap := range inputMap {
+		// resultInnerMap := make(map[string]uint32)
+		// for innerKey, innerValue := range innerMap {
+		// 	resultInnerMap[innerKey] = innerValue
+		// }
+		resultMap[key.ToString()] = innerMap
+	}
+	return resultMap
+}
 
 type Dependency struct {
 	SourceIndex uint32
