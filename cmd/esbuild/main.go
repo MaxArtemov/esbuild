@@ -128,6 +128,7 @@ var helpText = func(colors logger.Colors) string {
   --tree-shaking=...        Force tree shaking on or off (false | true)
   --tsconfig=...            Use this tsconfig.json file instead of other ones
   --version                 Print the current version (` + esbuildVersion + `) and exit
+  --disk-cache=...          Cache directory for speeding up recompilation
 
 ` + colors.Bold + `Examples:` + colors.Reset + `
   ` + colors.Dim + `# Produces dist/entry_point.js and dist/entry_point.js.map` + colors.Reset + `

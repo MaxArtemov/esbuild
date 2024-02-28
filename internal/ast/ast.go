@@ -388,9 +388,6 @@ func (assertOrWith *ImportAssertOrWith) FromString(formattedString string) (*Imp
 		return nil, err
 	}
 
-	fmt.Println("Entries:", EntriesStr)
-	fmt.Println("Keyword:", Keyword)
-
 	// Entries            []AssertOrWithEntry
 
 	KeywordUint, err := strconv.Atoi(Keyword)
@@ -712,6 +709,40 @@ func (ref Ref) FromString(formattedString string) Ref {
 type LocRef struct {
 	Loc logger.Loc
 	Ref Ref
+}
+
+func (locRef *LocRef) ToString() string {
+	return fmt.Sprintf("{ Loc: %s Ref: %s }", locRef.Loc.ToString(), locRef.Ref.ToString())
+}
+func (locRef *LocRef) FromString(formattedString string) (*LocRef, error) {
+	var (
+		LocStr string
+		RefStr string
+	)
+
+	_, err := fmt.Sscanf(
+		formattedString,
+		"{ Loc: %s, Ref: %s }",
+		&LocStr,
+		&RefStr,
+	)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	loc, err := logger.LocFromString(LocStr)
+	if err != nil {
+		fmt.Println("Error parsing:", err)
+		return nil, err
+	}
+
+	ref := Ref{}.FromString(RefStr)
+
+	return &LocRef{
+		Loc: *loc,
+		Ref: ref,
+	}, nil
 }
 
 type ImportItemStatus uint8

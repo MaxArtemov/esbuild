@@ -7,6 +7,14 @@ import (
 	"github.com/evanw/esbuild/internal/runtime"
 )
 
+func GetCacheFromDisk() (error, *CacheSet) {
+	caches := MakeCacheSet()
+	var cacheDir = "/Users/maxa/projects/esbuild/cache_jsons"
+	cacheSet, cacheReadError := LoadCacheFromDir(cacheDir, caches)
+
+	return cacheReadError, cacheSet
+}
+
 // This is a cache of the parsed contents of a set of files. The idea is to be
 // able to reuse the results of parsing between builds and make subsequent
 // builds faster by avoiding redundant parsing work. This only works if:

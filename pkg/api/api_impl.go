@@ -925,7 +925,7 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 	// validation that we just did above.
 
 	// instead of creating cache here, we try to read it from disk and get it already initialized
-	fmt.Println("Not creating cache in contextImpl, as it should e passed from outside")
+	// fmt.Println("Not creating cache in contextImpl, as it should e passed from outside")
 	// caches := cache.MakeCacheSet()
 
 	log := logger.NewDeferLog(logger.DeferLogNoVerboseOrDebug, logOptions.Overrides)
@@ -954,6 +954,30 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 		return nil, convertMessagesToPublic(logger.Error, msgs)
 	}
 
+	var timer *helpers.Timer
+	if api_helpers.UseTimer {
+		timer = &helpers.Timer{}
+	}
+
+	fmt.Println("buildOpts.CacheFromDisk", buildOpts.CacheFromDisk)
+	if buildOpts.CacheFromDisk {
+		timer.Begin("read-cache")
+		cacheError, cacheSet := cache.GetCacheFromDisk()
+		fmt.Println("Read cache from disk", cacheSet)
+		if cacheError != nil {
+			fmt.Println("Error reading cache from disk", cacheError)
+		}
+		buildOpts.Caches = cacheSet
+		timer.End("read-cache")
+	} else {
+		fmt.Println("Make -cache set?")
+		timer.Begin("make-cache-set")
+		caches := cache.MakeCacheSet()
+		fmt.Println("Made cache set", caches)
+		buildOpts.Caches = caches
+		timer.End("make-cache-set")
+	}
+
 	args := rebuildArgs{
 		caches:             buildOpts.Caches,
 		onEndCallbacks:     onEndCallbacks,
@@ -965,6 +989,7 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 		mangleCache:        buildOpts.MangleCache,
 		absWorkingDir:      absWorkingDir,
 		write:              buildOpts.Write,
+		timer:              timer,
 	}
 
 	return &internalContext{
@@ -1471,6 +1496,7 @@ type rebuildArgs struct {
 	mangleCache        map[string]interface{}
 	absWorkingDir      string
 	write              bool
+	timer              *helpers.Timer
 }
 
 type rebuildState struct {
@@ -1500,11 +1526,15 @@ func rebuildImpl(args rebuildArgs, oldHashes map[string]string) (rebuildState, m
 	var result BuildResult
 	var watchData fs.WatchData
 	var toWriteToStdout []byte
+	var timer = args.timer
+	// var timer *helpers.Timer
+	// if api_helpers.UseTimer {
+	// 	timer = &helpers.Timer{}
+	// }
 
-	var timer *helpers.Timer
-	if api_helpers.UseTimer {
-		timer = &helpers.Timer{}
-	}
+	// if args.options.DiskCache != nil {
+
+	// }
 
 	// Scan over the bundle
 	bundle := bundler.ScanBundle(config.BuildCall, log, realFS, args.caches, args.entryPoints, args.options, timer)
@@ -1672,7 +1702,7 @@ func rebuildImpl(args rebuildArgs, oldHashes map[string]string) (rebuildState, m
 
 	// Log timing information now that we're all done
 	timer.Log(log)
-	fmt.Println("logged@!")
+	// TODO: here all of the timer is logged
 
 	// End the log after "OnEnd" callbacks have added any additional errors and/or
 	// warnings. This may may print any warnings that were deferred up until this
@@ -1817,7 +1847,6 @@ func transformImpl(input string, transformOpts TransformOptions) TransformResult
 		}
 
 		timer.Log(log)
-		fmt.Println("logged!")
 	}
 
 	// Return the results

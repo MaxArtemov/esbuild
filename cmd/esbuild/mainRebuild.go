@@ -9,14 +9,6 @@ import (
 	"github.com/evanw/esbuild/pkg/api"
 )
 
-func getCacheFromDisk() (error, *cache.CacheSet) {
-	caches := cache.MakeCacheSet()
-	var cacheDir = "/Users/maxa/projects/esbuild/cache_jsons"
-	cacheSet, cacheReadError := cache.LoadCacheFromDir(cacheDir, caches)
-
-	return cacheReadError, cacheSet
-}
-
 func main() {
 
 	log := logger.NewStderrLog(logger.OutputOptions{
@@ -28,7 +20,7 @@ func main() {
 	timer := &helpers.Timer{}
 	// actualEntry := "/Users/maxa/projects/bundler-poc/src/code/materialUsed.jsx"
 	// emptyEntry := "/Users/maxa/projects/bundler-poc/src/code/materialUsedEmpty.jsx"
-	simpleEntry := "/Users/maxa/projects/esbuild/testcode/some.js"
+	simpleEntry := "/Users/maxa/projects/bundler-poc/src/code/materialUsed.jsx"
 
 	EntryPoints := []string{
 		// "/Users/maxa/projects/bundler-poc/src/code/full-mui.jsx",
@@ -38,7 +30,7 @@ func main() {
 	}
 
 	timer.Begin("read-cache")
-	cacheError, cacheSet := getCacheFromDisk()
+	cacheError, cacheSet := cache.GetCacheFromDisk()
 	if cacheError != nil {
 		fmt.Println("Error reading cache from disk", cacheError)
 	}
@@ -59,6 +51,7 @@ func main() {
 		// Outfile:           "dist/app.js",
 		External: []string{"react", "react-dom"},
 		Outdir:   "./dist",
+		// Write:    true,
 	})
 	timer.End("create-context")
 

@@ -399,9 +399,11 @@ var bindingMapping map[string]B
 
 func (b Binding) MarshalJSON() ([]byte, error) {
 	// TODO: check for recursive statements (e.g. SBlock)
-	concreteType := reflect.TypeOf(b.Data).String() // same as using fmt. %T
+	concreteType := ""
+	if b.Data != nil {
+		concreteType = reflect.TypeOf(b.Data).String() // same as using fmt. %T
+	}
 
-	fmt.Println("MarshalJSON of binding")
 	// typeName := fmt.Sprintf("%T", s.Data)
 
 	val, err := json.Marshal(&struct {
@@ -480,7 +482,6 @@ func (e Expr) MarshalJSON() ([]byte, error) {
 		concreteType = reflect.TypeOf(e.Data).String() // same as using fmt. %T
 	}
 
-	fmt.Println("MarshalJSON of experession")
 	// typeName := fmt.Sprintf("%T", s.Data)
 
 	val, err := json.Marshal(&struct {
@@ -1012,8 +1013,10 @@ type RawStmt struct {
 }
 
 var mapping map[string]S
+var scopeNames map[*Scope]string
 
 func init() {
+	scopeNames = make(map[*Scope]string)
 	mapping = make(map[string]S)
 	mapping[reflect.TypeOf(&SBlock{}).String()] = &SBlock{}
 	mapping[reflect.TypeOf(&SComment{}).String()] = &SComment{}
@@ -1101,9 +1104,14 @@ func init() {
 
 func (s Stmt) MarshalJSON() ([]byte, error) {
 	// TODO: check for recursive statements (e.g. SBlock)
-	concreteType := reflect.TypeOf(s.Data).String() // same as using fmt. %T
+	// concreteType := reflect.TypeOf(s.Data).String() // same as using fmt. %T
+	var concreteType string
+	if s.Data == nil {
+		concreteType = ""
+	} else {
+		concreteType = reflect.TypeOf(s.Data).String() // same as using fmt. %T
+	}
 
-	fmt.Println("MarshalJSON of stmt")
 	// typeName := fmt.Sprintf("%T", s.Data)
 
 	val, err := json.Marshal(&struct {
@@ -1129,6 +1137,11 @@ func (s *Stmt) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		fmt.Println("Error Unmarshalling stmt with name", err)
 		return err
+	}
+	if raw.TypeName == "" {
+		s.Data = nil
+		s.Loc = raw.Loc
+		return nil
 	}
 	typePointer := mapping[raw.TypeName]
 	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(S)
@@ -1518,6 +1531,159 @@ type Scope struct {
 	Kind       ScopeKind
 }
 
+type SerialiezdScope struct {
+	Name                    string
+	TSNamespace             *TSNamespaceScope
+	Members                 map[string]ScopeMember
+	Replaced                []ScopeMember
+	Generated               []ast.Ref
+	UseStrictLoc            logger.Loc
+	Label                   ast.LocRef
+	LabelStmtIsLoop         bool
+	ContainsDirectEval      bool
+	ForbidArguments         bool
+	IsAfterConstLocalPrefix bool
+	StrictMode              StrictModeKind
+	Kind                    ScopeKind
+
+	// for json serilization
+	Parent   string
+	Children []string
+}
+
+func getNameByScope(scope *Scope) string {
+	scopeName, ok := scopeNames[scope]
+	if ok {
+		return scopeName
+	}
+
+	if scope == nil {
+		fmt.Println("Name by scope - empty, scope is nil", scope)
+		scopeNames[scope] = ""
+		return ""
+	}
+	name := fmt.Sprintf("%x", &scope)
+	fmt.Println("Name by scope", name, scope)
+	scopeNames[scope] = name
+	return fmt.Sprintf("%x", &scope)
+}
+
+func ScopeFromSerialized(data SerialiezdScope) *Scope {
+	s := &Scope{
+		TSNamespace:             data.TSNamespace,
+		Members:                 data.Members,
+		Replaced:                data.Replaced,
+		Generated:               data.Generated,
+		UseStrictLoc:            data.UseStrictLoc,
+		Label:                   data.Label,
+		LabelStmtIsLoop:         data.LabelStmtIsLoop,
+		ContainsDirectEval:      data.ContainsDirectEval,
+		ForbidArguments:         data.ForbidArguments,
+		IsAfterConstLocalPrefix: data.IsAfterConstLocalPrefix,
+		StrictMode:              data.StrictMode,
+		Kind:                    data.Kind,
+
+		Parent:   nil,
+		Children: make([]*Scope, len(data.Children)),
+	}
+	// for _, child := range data.Children {
+	// 	s.Children = append(s.Children, &Scope{})
+	// }
+	return s
+}
+
+// DFS on scopes
+func flattenScope(root *Scope, flatScopes []SerialiezdScope) []SerialiezdScope {
+	parentName := ""
+	if root.Parent != nil {
+		fmt.Println("Getting scope for parent")
+		parentName = getNameByScope(root.Parent)
+	}
+	result := SerialiezdScope{
+		Name:                    getNameByScope(root),
+		TSNamespace:             root.TSNamespace,
+		Members:                 root.Members,
+		Replaced:                root.Replaced,
+		Generated:               root.Generated,
+		UseStrictLoc:            root.UseStrictLoc,
+		Label:                   root.Label,
+		LabelStmtIsLoop:         root.LabelStmtIsLoop,
+		ContainsDirectEval:      root.ContainsDirectEval,
+		ForbidArguments:         root.ForbidArguments,
+		IsAfterConstLocalPrefix: root.IsAfterConstLocalPrefix,
+		StrictMode:              root.StrictMode,
+		Kind:                    root.Kind,
+
+		Parent:   parentName,
+		Children: make([]string, len(root.Children)),
+	}
+
+	flatScopes = append(flatScopes, result)
+
+	for i, child := range root.Children {
+		fmt.Println("Getting scope for child", child)
+		result.Children[i] = getNameByScope(child)
+		flatScopes = flattenScope(child, flatScopes)
+	}
+
+	return flatScopes
+}
+
+func (s *Scope) MarshalJSON() ([]byte, error) {
+	var scopes []SerialiezdScope
+	flat := flattenScope(s, scopes)
+	return json.Marshal(flat)
+}
+
+func createScopeTreeFromSerialized(data []SerialiezdScope) *Scope {
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Create a map of scoeps
+	// {scopeName1-> scope1}
+	// {scopeName2 -> scope2}
+	scopesMap := make(map[string]*Scope)
+	for _, serialized := range data {
+		scope := ScopeFromSerialized(serialized)
+		scopesMap[serialized.Name] = scope
+	}
+
+	var root *Scope
+	for _, serialized := range data {
+		parent, parentExists := scopesMap[serialized.Parent]
+		if !parentExists {
+			// you are the root
+			root = scopesMap[serialized.Name]
+		} else {
+			child := scopesMap[serialized.Name]
+			child.Parent = parent
+			parent.Children = append(parent.Children, child)
+		}
+	}
+
+	return root
+}
+
+func (s *Scope) UnmarshalJSON(data []byte) error {
+	var scopes []SerialiezdScope
+	err := json.Unmarshal(data, &scopes)
+	if len(scopes) == 0 {
+		s = nil
+		return nil
+	}
+	scope := createScopeTreeFromSerialized(scopes)
+	if scope == nil {
+		s = nil
+		return nil
+	}
+	*s = *createScopeTreeFromSerialized(scopes)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type StrictModeKind uint8
 
 const (
@@ -1791,7 +1957,7 @@ type SerializedAST struct {
 	ExprComments                    map[string][]string
 	TopLevelSymbolToPartsFromParser map[string][]uint32
 	TSEnums                         map[string]map[string]string
-	ModuleTypeData                  string
+	ModuleTypeData                  ModuleTypeData
 	// Add more fields with custom string functionality here
 	ConstValues              map[string]string
 	MangledProps             map[string]string
@@ -1913,7 +2079,8 @@ func (serialized *SerializedAST) DeserializeFromJson() (AST, error) {
 		ref = ref.FromString(refStr)
 		a.TopLevelSymbolToPartsFromParser[ref] = parts
 	}
-	a.ModuleTypeData, err = ModuleDataTypeFromString(serialized.ModuleTypeData)
+	// a.ModuleTypeData, err = ModuleDataTypeFromString(serialized.ModuleTypeData)
+	a.ModuleTypeData = serialized.ModuleTypeData
 	if err != nil {
 		return a, err
 	}
@@ -2064,7 +2231,7 @@ func (a AST) SerializeForJson() *SerializedAST {
 			}
 			return result
 		}(),
-		ModuleTypeData: a.ModuleTypeData.ToString(),
+		ModuleTypeData: a.ModuleTypeData,
 		ReservedProps:  a.ReservedProps,
 		ImportRecords: func() []string {
 			var acc []string
@@ -2147,11 +2314,11 @@ type ConstValue struct {
 }
 
 func (c ConstValue) ToString() string {
-	return fmt.Sprintf("Number: %v, Kind: %v", c.Number, c.Kind)
+	return fmt.Sprintf("Number: %v Kind: %v", c.Number, c.Kind)
 }
 
 func (c ConstValue) FromString(formattedStr string) (ConstValue, error) {
-	fmt.Sscanf(formattedStr, "Number: %v, Kind: %v", c.Number, c.Kind)
+	fmt.Sscanf(formattedStr, "Number: %v Kind: %v", c.Number, c.Kind)
 	return c, nil
 }
 

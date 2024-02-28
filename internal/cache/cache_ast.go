@@ -217,16 +217,12 @@ func LoadCacheFromDir(cacheDir string, cacheSet *CacheSet) (*CacheSet, error) {
 				fmt.Println("Error reading file info from cache", readFileErr, fileInfo)
 				return cacheSet, readFileErr
 			}
-			fmt.Println("contents", string(contents))
-			fmt.Println("Empty entry", serializedCacheEntry)
 			parseErr := json.Unmarshal(contents, &serializedCacheEntry)
 			cacheEntry, err := parseCacheEntryFromJson(serializedCacheEntry)
 			if err != nil {
 				fmt.Println("Error parsing cache entry from json", err)
 				panic(err)
-				return cacheSet, err
 			}
-			fmt.Println("Full entry after deserializing", cacheEntry)
 			cacheSet.AddJsEntry(cacheEntry)
 
 			if parseErr != nil {
@@ -267,7 +263,6 @@ func (c jsCacheEntry) MarshalJSON() ([]byte, error) {
 		Ok:     c.ok,
 		Msgs:   []string{"first", "second", "third"},
 	}
-	fmt.Println("serilaized cacheEntry before marshaling to json", cacheEntry)
 	content, err := json.Marshal(cacheEntry)
 	if err != nil {
 		fmt.Println("Error marshalling cache entry to json", err)
@@ -282,7 +277,6 @@ func (c *jsCacheEntry) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("serilaized cacheEntry after Unmarshaling from json", serializedCacheEntry)
 
 	cacheEntry, err := parseCacheEntryFromJson(serializedCacheEntry)
 
@@ -291,7 +285,6 @@ func (c *jsCacheEntry) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	c = cacheEntry
-	fmt.Println("bytesToString", string(b))
 	return nil
 }
 
@@ -299,12 +292,6 @@ func (c *jsCacheEntry) getJsonPath() string {
 	contentHash := my_helpers.HashString(c.source.Contents)
 	// entryCacheKey := c.source.KeyPath.ToString()
 
-	return "/Users/maxa/projects/esbuild/cache_jsons/" + contentHash + ".json"
-}
-
-func (c *jsCacheEntry) creteJsonPath(entryCacheKey string) string {
-	contentHash := my_helpers.HashString(c.source.Contents)
-	// entryCacheKey
 	return "/Users/maxa/projects/esbuild/cache_jsons/" + contentHash + ".json"
 }
 
@@ -316,7 +303,7 @@ func (c *JSCache) SetCacheEntry(entry *jsCacheEntry) {
 	go func(keyPath logger.Path, entryPath logger.Path) {
 		// Save the cache entry to a file
 		jsonPath := entry.getJsonPath()
-		fmt.Println("jsonPath", jsonPath)
+		fmt.Println("Save cache entry to file", entryPath, jsonPath)
 		SaveCacheEntryToFile(c, jsonPath, entryPath)
 	}(entry.source.KeyPath, entryPath)
 }
@@ -348,7 +335,7 @@ func (c *JSCache) Parse(log logger.Log, source logger.Source, options js_parser.
 	}
 
 	// Cache miss
-	fmt.Println("Cache MISS :)", source)
+	fmt.Println("Cache MISS :)", source.KeyPath.ToString())
 	tempLog := logger.NewDeferLog(logger.DeferLogAll, log.Overrides)
 	ast, ok := js_parser.Parse(tempLog, source, options)
 	msgs := tempLog.Done()

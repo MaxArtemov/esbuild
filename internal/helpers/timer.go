@@ -90,7 +90,6 @@ func (t *Timer) Log(log logger.Log) {
 				item.time.Sub(top.time).Milliseconds())
 		}
 	}
-	fmt.Println("log.AddIDWithNotes")
 	log.AddIDWithNotes(logger.MsgID_None, logger.Info, nil, logger.Range{},
 		"Timing information (times may not nest hierarchically due to parallelism)", notes)
 }

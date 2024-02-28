@@ -1,54 +1,53 @@
-Not creating cache in contextImpl, as it should e passed from outside
-sending to parse file in separate routine testcode/some.js
-jsonPath /Users/maxa/projects/esbuild/cache_jsons/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.json
-entypoint meta [{some 1 true}]
-serilaized cacheEntry {{map[] map[0:1:[0]] map[] map[] map[] map[] [] map[] map[] [] 0:0: 0:0 0:0 0:0 0:1 0:2 0:3 1 [0 0 0 0] false false false 0} .pnp.cjsfile:/Users/maxa/projects/esbuild/.pnp.cjs:::00 true [first second third]}
-starting scanAllDependencies [{[] map[] { <nil> {<nil> <nil> []  {<nil> 0} {   {   {} 0} 0} 0 false}} {{0} 0 0} false} {[] map[] { <nil> {<nil> <nil> []  {<nil> 0} {   {   {} 0} 0} 0 false}} {{0} 0 0} false}]
-scanning file testcode/some.js
-going to scan import records of testcode/some.js
-importRecord! ./another
-jsonPath /Users/maxa/projects/esbuild/cache_jsons/6a1c155ea8e1334487b34e2427a005be517aea6eb393d2ca9e75dd05afaff543.json
-Current record ./another
-maybeParseFile will parse and add record to results for: ./another
-sending to parse file in separate routine testcode/another.js
-serilaized cacheEntry {{map[] map[1:0:[1] 1:1:[1] 1:10:[10] 1:12:[0] 1:2:[2] 1:3:[3] 1:4:[4] 1:5:[5] 1:6:[6] 1:7:[7] 1:8:[8] 1:9:[9]] map[] map[] map[] map[] [{ AssertOrWith: nil, GlobPattern: nil, Path: :./another:::0, Range: 25:36, ErrorHandlerLoc: 0, SourceIndex: {0}, CopySourceIndex: {0}, Flags: 0, Kind: 1 }] map[1:1:Alias: usedVar, LocalPartsWithUses: [], AliasLoc: 9, NamespaceRef: 1:0, ImportRecordIndex: 0, AliasIsStar: false, IsExported: false] map[hello:Ref: 1:2, AliasLoc: 50 hello2:Ref: 1:3, AliasLoc: 79 hello3:Ref: 1:4, AliasLoc: 109 hello4:Ref: 1:5, AliasLoc: 139 hello5:Ref: 1:6, AliasLoc: 169 hello6:Ref: 1:7, AliasLoc: 199 hello7:Ref: 1:8, AliasLoc: 229 hello8:Ref: 1:9, AliasLoc: 259 hello9:Ref: 1:10, AliasLoc: 289] [] 0:0: 276:282 0:0 0:0 1:12 1:13 1:14 10 [0 0 0 0] false false false 2} testcode/some.jssomeimport { usedVar  } from "./another"
-export const hello = 'wrold'
-export const hello2 = 'wrold'
-export const hello3 = 'wrold'
-export const hello4 = 'wrold'
-export const hello5 = 'wrold'
-export const hello6 = 'wrold'
-export const hello7 = 'wrold'
-export const hello8 = 'wrold'
-export const hello9 = usedVarfile:/Users/maxa/projects/esbuild/testcode/some.js:::01 true [first second third]}
-scanning file testcode/another.js
-going to scan import records of testcode/another.js
-jsonPath /Users/maxa/projects/esbuild/cache_jsons/3ba49b6c459b288646344ab7c2df9d091fc9850e214d0fffd2166944b5ee8ea3.json
-serilaized cacheEntry {{map[] map[2:0:[1] 2:1:[2] 2:3:[0]] map[] map[] map[] map[] [] map[] map[unusedVar:Ref: 2:1, AliasLoc: 46 usedVar:Ref: 2:0, AliasLoc: 13] [] 0:0: 33:39 0:0 0:0 2:3 2:4 2:5 2 [0 0 0 0] false false false 2} testcode/another.jsanotherexport const usedVar = 'usedVar'
-export const unusedVar = 'unusedVar'file:/Users/maxa/projects/esbuild/testcode/another.js:::02 true [first second third]}
-scanning file <runtime>
-going to scan import records of <runtime>
-logged@!
-First Rebuild done
-sending to parse file in separate routine testcode/some.js
-entypoint meta [{some 1 true}]
-starting scanAllDependencies [{[] map[] { <nil> {<nil> <nil> []  {<nil> 0} {   {   {} 0} 0} 0 false}} {{0} 0 0} false} {[] map[] { <nil> {<nil> <nil> []  {<nil> 0} {   {   {} 0} 0} 0 false}} {{0} 0 0} false}]
-scanning file <runtime>
-going to scan import records of <runtime>
-scanning file testcode/some.js
-going to scan import records of testcode/some.js
-importRecord! ./another
-Current record ./another
-maybeParseFile will parse and add record to results for: ./another
-sending to parse file in separate routine testcode/another.js
-scanning file testcode/another.js
-going to scan import records of testcode/another.js
-logged@!
-log.AddIDWithNotes
-[34m▶ [44;34m[[44;97mINFO[44;34m][0m [1mTiming information (times may not nest hierarchically due to parallelism)[0m
+Running build
+Make -cache set?
+Run rebuild from build
+caches &{{map[] {0 0}} {map[] {0 0}} {map[] {0 0}} {map[] {0 0}} {map[] map[] {0 0} 1}}
+Cache MISS :) file~!pa~/Users/maxa/projects/esbuild/.pnp.cjs~!pa~~!pa~~!pa~0
+Cache MISS :) file~!pa~/Users/maxa/projects/esbuild/testcode/some.js~!pa~~!pa~~!pa~0
+Cache MISS :) file~!pa~/Users/maxa/projects/esbuild/testcode/another.js~!pa~~!pa~~!pa~0
+▶ [INFO] Timing information (times may not nest hierarchically due to parallelism)
 
-  read-cache: 1ms
-  create-context: 0ms
-  first-rebuild: 5ms
-  second-rebuild: 2ms
+  make-cache-set: 0ms
+  Scan phase: 5ms
+    On-start callbacks: 0ms
+    Preprocess injected files: 0ms
+    Add entry points: 0ms
+    Scan all dependencies: 4ms
+      Parse runtime: 1ms
+      Scanning<runtime>: 0ms
+      Scanningtestcode/some.js: 0ms
+      Scanningtestcode/another.js: 0ms
+    Process scanned files: 0ms
+  Compile phase: 1ms
+    Spawn source map tasks: 0ms
+    Link: 1ms
+      Clone linker graph: 0ms
+      Scan imports and exports: 0ms
+        Step 1: 0ms
+        Step 2: 0ms
+        Step 3: 0ms
+        Step 4: 0ms
+        Step 5: 0ms
+        Step 6: 0ms
+      Tree shaking: 0ms
+      Code splitting: 0ms
+      Compute chunks: 0ms
+      Compute cross-chunk dependencies: 0ms
+      Waiting for mangle cache: 0ms
+      Mangle props: 0ms
+      Mangle local CSS: 0ms
+      Generate chunks: 0ms
+        Generate chunk "some.js": 0ms
+          Minify symbols: 0ms
+            Compute reserved names: 0ms
+            Accumulate symbol counts: 0ms
+              Parallel phase: 0ms
+              Serial phase: 0ms
+            Assign names by frequency: 0ms
+          Print JavaScript files: 0ms
+          Join JavaScript files: 0ms
+        Generate final output files: 0ms
+  Write output files: 0ms
+  On-end callbacks: 0ms
 
+var o="usedVar";var e="wrold",t="wrold",s="wrold",d="wrold",n="wrold",p="wrold",c="wrold",x="wrold",h=o;export{e as hello,t as hello2,s as hello3,d as hello4,n as hello5,p as hello6,c as hello7,x as hello8,h as hello9};
