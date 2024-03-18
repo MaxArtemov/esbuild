@@ -257,7 +257,7 @@ func (record *ImportRecord) FromString(formattedString string) (*ImportRecord, e
 
 	return &ImportRecord{
 		AssertOrWith:    assertOrWith,
-		GlobPattern:     globPattern, // TODO
+		GlobPattern:     globPattern,
 		Path:            *path,
 		Range:           rangeT,
 		ErrorHandlerLoc: *errorHandlerLoc,
@@ -722,7 +722,7 @@ func (locRef *LocRef) FromString(formattedString string) (*LocRef, error) {
 
 	_, err := fmt.Sscanf(
 		formattedString,
-		"{ Loc: %s, Ref: %s }",
+		"{ Loc: %s Ref: %s }",
 		&LocStr,
 		&RefStr,
 	)

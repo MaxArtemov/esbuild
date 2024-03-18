@@ -88,16 +88,19 @@ func parseOptionsImpl(
 	kind parseOptionsKind,
 ) (extras parseOptionsExtras, err *cli_helpers.ErrorWithNote) {
 	hasBareSourceMapFlag := false
-
+	fmt.Println("parseOptionsImpl")
 	// Parse the arguments now that we know what we're parsing
 	for _, arg := range osArgs {
 		switch {
 		case isBoolFlag(arg, "--disk-cache") && buildOpts != nil:
-			fmt.Println("@@@@@@@@@@@@@@@@@@@@@@ disk cache")
-			if value, err := parseBoolFlag(arg, true); err != nil {
+			fmt.Println("@@@@@@@@@@@@@@@@@@@@@@ disk cache", arg)
+			if value, err := parseBoolFlag(arg, true); err == nil {
+				fmt.Println("value", value)
 				buildOpts.CacheFromDisk = value
 			}
+			fmt.Println("error parsing param", err)
 		case isBoolFlag(arg, "--bundle") && buildOpts != nil:
+			fmt.Println("@@@@@@@@@@@@@@@@@@@@@@ bundle")
 			if value, err := parseBoolFlag(arg, true); err != nil {
 				return parseOptionsExtras{}, err
 			} else {

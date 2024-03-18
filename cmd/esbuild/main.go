@@ -152,7 +152,7 @@ var helpText = func(colors logger.Colors) string {
 `
 }
 
-func main1() {
+func main() {
 	logger.API = logger.CLIAPI
 
 	osArgs := os.Args[1:]

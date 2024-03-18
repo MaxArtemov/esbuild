@@ -3,6 +3,7 @@ package js_ast
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 
@@ -431,6 +432,12 @@ func (s *Binding) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	typePointer := bindingMapping[raw.TypeName]
+	if raw.TypeName == "" {
+		// fmt.Println("Binding with no type (no data field) unmarshaled.")
+		s.Data = nil
+		s.Loc = raw.Loc
+		return nil
+	}
 	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(B)
 	err2 := json.Unmarshal(raw.Data, &val)
 	if err2 != nil {
@@ -482,6 +489,18 @@ func (e Expr) MarshalJSON() ([]byte, error) {
 		concreteType = reflect.TypeOf(e.Data).String() // same as using fmt. %T
 	}
 
+	if concreteType == "*js_ast.ENumber" {
+		val := e.Data.(*ENumber)
+		if math.IsInf(val.Value, 1) {
+			e.Data = &ENumber{Value: math.MaxFloat64}
+		} else if math.IsInf(val.Value, -1) {
+			e.Data = &ENumber{Value: math.SmallestNonzeroFloat64}
+		} else if math.IsNaN(val.Value) {
+			// TODO: find better logic
+			e.Data = &ENumber{Value: -12312333}
+		}
+	}
+
 	// typeName := fmt.Sprintf("%T", s.Data)
 
 	val, err := json.Marshal(&struct {
@@ -495,6 +514,7 @@ func (e Expr) MarshalJSON() ([]byte, error) {
 	})
 	if err != nil {
 		fmt.Println("Error marshaling expr with name", err)
+		panic(err)
 		return []byte{}, err
 	}
 	return val, nil
@@ -506,10 +526,11 @@ func (e *Expr) UnmarshalJSON(data []byte) error {
 	err := json.Unmarshal(data, &raw)
 	if err != nil {
 		fmt.Println("Error Unmarshalling stmt with name", err)
+		panic(err)
 		return err
 	}
 	if raw.TypeName == "" {
-		fmt.Println("Expression with no type (no data field) unmarshaled.")
+		// fmt.Println("Expression with no type (no data field) unmarshaled.")
 		e.Data = nil
 		e.Loc = raw.Loc
 		return nil
@@ -520,10 +541,22 @@ func (e *Expr) UnmarshalJSON(data []byte) error {
 	err2 := json.Unmarshal(raw.Data, &val)
 	if err2 != nil {
 		fmt.Println("Error Unmarshalling stmt with name", err2)
+		panic(err2)
 		return err2
 	}
 	e.Data = val
 	e.Loc = raw.Loc
+	if raw.TypeName == "*js_ast.ENumber" {
+		val := e.Data.(*ENumber)
+		if val.Value == math.MaxFloat64 {
+			e.Data = &ENumber{Value: math.Inf(1)}
+		} else if val.Value == math.SmallestNonzeroFloat64 {
+			e.Data = &ENumber{Value: math.Inf(-1)}
+		} else if val.Value == -12312333 {
+			// TODO: find better logic
+			e.Data = &ENumber{Value: math.NaN()}
+		}
+	}
 	return nil
 }
 
@@ -1061,6 +1094,7 @@ func init() {
 
 	// **************************************************************** //
 	exprMapping = make(map[string]E)
+	exprMapping[reflect.TypeOf(&ENew{}).String()] = &ENew{}
 	exprMapping[reflect.TypeOf(&EArray{}).String()] = &EArray{}
 	exprMapping[reflect.TypeOf(&EUnary{}).String()] = &EUnary{}
 	exprMapping[reflect.TypeOf(&EBinary{}).String()] = &EBinary{}
@@ -1125,6 +1159,7 @@ func (s Stmt) MarshalJSON() ([]byte, error) {
 	})
 	if err != nil {
 		fmt.Println("Error marshaling stmt with name", err)
+		panic(err)
 		return []byte{}, err
 	}
 	return val, nil
@@ -1136,6 +1171,7 @@ func (s *Stmt) UnmarshalJSON(data []byte) error {
 	err := json.Unmarshal(data, &raw)
 	if err != nil {
 		fmt.Println("Error Unmarshalling stmt with name", err)
+		panic(err)
 		return err
 	}
 	if raw.TypeName == "" {
@@ -1558,12 +1594,10 @@ func getNameByScope(scope *Scope) string {
 	}
 
 	if scope == nil {
-		fmt.Println("Name by scope - empty, scope is nil", scope)
 		scopeNames[scope] = ""
 		return ""
 	}
 	name := fmt.Sprintf("%x", &scope)
-	fmt.Println("Name by scope", name, scope)
 	scopeNames[scope] = name
 	return fmt.Sprintf("%x", &scope)
 }
@@ -1596,7 +1630,6 @@ func ScopeFromSerialized(data SerialiezdScope) *Scope {
 func flattenScope(root *Scope, flatScopes []SerialiezdScope) []SerialiezdScope {
 	parentName := ""
 	if root.Parent != nil {
-		fmt.Println("Getting scope for parent")
 		parentName = getNameByScope(root.Parent)
 	}
 	result := SerialiezdScope{
@@ -1621,7 +1654,6 @@ func flattenScope(root *Scope, flatScopes []SerialiezdScope) []SerialiezdScope {
 	flatScopes = append(flatScopes, result)
 
 	for i, child := range root.Children {
-		fmt.Println("Getting scope for child", child)
 		result.Children[i] = getNameByScope(child)
 		flatScopes = flattenScope(child, flatScopes)
 	}
@@ -2147,7 +2179,6 @@ func (serialized *SerializedAST) DeserializeFromJson() (AST, error) {
 	}
 
 	var ref ast.Ref
-
 	a.ExportStarImportRecords = serialized.ExportStarImportRecords
 
 	if a.SourceMapComment, err = logger.SpanFromString(serialized.SourceMapComment); err != nil {
@@ -2426,6 +2457,9 @@ func stringToUintArr(str string) []uint32 {
 var namedImportFormat = "Alias: %s LocalPartsWithUses: %s AliasLoc: %v NamespaceRef: %v ImportRecordIndex: %v AliasIsStar: %v IsExported: %v"
 
 func (n NamedImport) ToString() string {
+	if n.Alias == "" {
+		n.Alias = "nil"
+	}
 	return fmt.Sprintf(namedImportFormat, n.Alias, uintArrToString(n.LocalPartsWithUses), n.AliasLoc.ToString(), n.NamespaceRef.ToString(), n.ImportRecordIndex, n.AliasIsStar, n.IsExported)
 }
 
@@ -2451,6 +2485,9 @@ func (n NamedImport) FromString(importFormattedString string) (NamedImport, erro
 	if err != nil {
 		fmt.Println("Error parsing NamedImport:", err)
 		return NamedImport{}, err
+	}
+	if Alias == "nil" {
+		Alias = ""
 	}
 
 	LocalPartsWithUses := stringToUintArr(LocalPartsWithUsesStr)

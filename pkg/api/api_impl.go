@@ -962,8 +962,8 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 	fmt.Println("buildOpts.CacheFromDisk", buildOpts.CacheFromDisk)
 	if buildOpts.CacheFromDisk {
 		timer.Begin("read-cache")
+		fmt.Println("Reading cache from disk")
 		cacheError, cacheSet := cache.GetCacheFromDisk()
-		fmt.Println("Read cache from disk", cacheSet)
 		if cacheError != nil {
 			fmt.Println("Error reading cache from disk", cacheError)
 		}

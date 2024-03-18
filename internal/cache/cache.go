@@ -1,6 +1,10 @@
 package cache
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/evanw/esbuild/internal/logger"
@@ -47,6 +51,8 @@ type CacheSet struct {
 }
 
 func (cacheSet *CacheSet) AddJsEntry(cacheEntry *jsCacheEntry) {
+	cacheSet.JSCache.mutex.Lock()
+	defer cacheSet.JSCache.mutex.Unlock()
 	cacheSet.JSCache.entries[cacheEntry.source.KeyPath] = cacheEntry
 }
 
@@ -82,6 +88,68 @@ type SourceIndexCache struct {
 	mutex           sync.Mutex
 	nextSourceIndex uint32
 }
+type SourceIndexCacheSerialized struct {
+	GlobEntries     map[uint64]uint32
+	Entries         map[string]uint32
+	NextSourceIndex uint32
+}
+
+func (srcIdxCache *SourceIndexCache) GetFromDisk() ([]byte, error) {
+	filePath := "/Users/maxa/projects/esbuild/index_cache/source_index_cache.json"
+	contents, readFileErr := os.ReadFile(filePath)
+	if readFileErr != nil {
+		panic(readFileErr)
+	}
+	serialized := SourceIndexCacheSerialized{}
+	err := json.Unmarshal(contents, &serialized)
+	if err != nil {
+		fmt.Println("Error unmarshalling cache entry", err)
+		panic(err)
+	}
+	srcIdxCache.Deserialize(serialized)
+	return contents, readFileErr
+}
+
+func (srcIdxCache *SourceIndexCache) Serialize() SourceIndexCacheSerialized {
+	serialized := SourceIndexCacheSerialized{}
+	serialized.NextSourceIndex = srcIdxCache.nextSourceIndex
+	serialized.Entries = make(map[string]uint32)
+	for key, value := range srcIdxCache.entries {
+		serialized.Entries[key.ToString()] = value
+	}
+	serialized.GlobEntries = srcIdxCache.globEntries
+	return serialized
+}
+
+func (srcIdxCache *SourceIndexCache) Deserialize(serialized SourceIndexCacheSerialized) {
+	srcIdxCache.nextSourceIndex = serialized.NextSourceIndex
+	srcIdxCache.entries = make(map[sourceIndexKey]uint32)
+	for key, value := range serialized.Entries {
+		srcIdxCache.entries[SrcIdxKeyFromString(key)] = value
+	}
+	srcIdxCache.globEntries = serialized.GlobEntries
+}
+
+func (srcIdxCache *SourceIndexCache) Persist() error {
+	serialized := srcIdxCache.Serialize()
+
+	content, err := json.Marshal(serialized)
+	if err != nil {
+		panic(err)
+	}
+	filePath := "/Users/maxa/projects/esbuild/index_cache/source_index_cache.json"
+	if len(content) != 0 {
+		err2 := os.WriteFile(filePath, content, 0644)
+		if err2 != nil {
+			fmt.Println("Error writing cache to disk", err2)
+
+		}
+	} else {
+		fmt.Println("Error marshalling cache entry, Empty entry serialzied ({})", serialized)
+		return errors.New("error marshalling cache entry, Empty entry serialzied")
+	}
+	return nil
+}
 
 type SourceIndexKind uint8
 
@@ -93,6 +161,27 @@ const (
 type sourceIndexKey struct {
 	path logger.Path
 	kind SourceIndexKind
+}
+
+func (s *sourceIndexKey) ToString() string {
+	pathStr := s.path.ToString()
+	return fmt.Sprintf("%s %d", pathStr, s.kind)
+}
+
+func SrcIdxKeyFromString(str string) sourceIndexKey {
+	var pathStr string
+	var kind SourceIndexKind
+
+	_, err1 := fmt.Sscanf(str, "%s %d", &pathStr, &kind)
+	if err1 != nil {
+		panic(err1)
+	}
+	path, err := logger.PathFromString(pathStr)
+
+	if err != nil {
+		panic(err)
+	}
+	return sourceIndexKey{path: *path, kind: kind}
 }
 
 func (c *SourceIndexCache) LenHint() uint32 {

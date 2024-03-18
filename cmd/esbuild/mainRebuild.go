@@ -3,13 +3,12 @@ package main
 import (
 	"fmt"
 
-	"github.com/evanw/esbuild/internal/cache"
 	"github.com/evanw/esbuild/internal/helpers"
 	"github.com/evanw/esbuild/internal/logger"
 	"github.com/evanw/esbuild/pkg/api"
 )
 
-func main() {
+func main1() {
 
 	log := logger.NewStderrLog(logger.OutputOptions{
 		IncludeSource: true,
@@ -20,7 +19,9 @@ func main() {
 	timer := &helpers.Timer{}
 	// actualEntry := "/Users/maxa/projects/bundler-poc/src/code/materialUsed.jsx"
 	// emptyEntry := "/Users/maxa/projects/bundler-poc/src/code/materialUsedEmpty.jsx"
-	simpleEntry := "/Users/maxa/projects/bundler-poc/src/code/materialUsed.jsx"
+	simpleEntry := "/Users/maxa/projects/bundler-poc/build/comp-3/index.js"
+	// simpleEntry := "/Users/maxa/projects/esbuild/testcode/some.js"
+	// simpleEntry := "/Users/maxa/projects/bundler-poc/src/code/materialUsed.jsx"
 
 	EntryPoints := []string{
 		// "/Users/maxa/projects/bundler-poc/src/code/full-mui.jsx",
@@ -29,16 +30,15 @@ func main() {
 		simpleEntry,
 	}
 
-	timer.Begin("read-cache")
-	cacheError, cacheSet := cache.GetCacheFromDisk()
-	if cacheError != nil {
-		fmt.Println("Error reading cache from disk", cacheError)
-	}
-	timer.End("read-cache")
+	// timer.Begin("read-cache")
+	// cacheError, cacheSet := cache.GetCacheFromDisk()
+	// if cacheError != nil {
+	// 	fmt.Println("Error reading cache from disk", cacheError)
+	// }
+	// timer.End("read-cache")
 
-	timer.Begin("create-context")
 	myContext, err := api.Context(api.BuildOptions{
-		Caches:            cacheSet,
+		// Caches:            cacheSet,
 		EntryPoints:       EntryPoints,
 		EntryNames:        "[dir]/[name]-[hash]",
 		Bundle:            true,
@@ -49,11 +49,11 @@ func main() {
 		Format:            api.FormatESModule,
 		JSX:               api.JSXAutomatic,
 		// Outfile:           "dist/app.js",
-		External: []string{"react", "react-dom"},
-		Outdir:   "./dist",
-		// Write:    true,
+		External:      []string{"react", "react-dom"},
+		Outdir:        "./dist",
+		Write:         true,
+		CacheFromDisk: true,
 	})
-	timer.End("create-context")
 
 	if err != nil {
 		panic(err)
@@ -73,13 +73,13 @@ func main() {
 	// my_helpers.ReplaceFileContents(emptyEntry, actualEntry)
 	// timer.End("replace file contents")
 
-	timer.Begin("second-rebuild")
-	result2 := myContext.Rebuild()
-	timer.End("second-rebuild")
+	// timer.Begin("second-rebuild")
+	// result2 := myContext.Rebuild()
+	// timer.End("second-rebuild")
 
-	for _, err := range result2.Errors {
-		fmt.Println("error from second build", err)
-	}
+	// for _, err := range result2.Errors {
+	// 	fmt.Println("error from second build", err)
+	// }
 
 	timer.Log(log)
 }

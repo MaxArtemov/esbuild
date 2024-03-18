@@ -192,6 +192,9 @@ func (r *Range) ToString() string {
 
 func RangeFromString(rangeStr string) (Range, error) {
 	separator := "~!ra~"
+	if rangeStr == "" {
+		return Range{}, nil
+	}
 	parts := strings.Split(rangeStr, separator)
 	if len(parts) != 2 {
 		return Range{}, errors.New("incorrect number of params in serialize")
@@ -275,6 +278,9 @@ func (s Span) ToString() string {
 }
 func SpanFromString(spanString string) (Span, error) {
 	separator := "~!sp~"
+	if spanString == "" {
+		return Span{}, nil
+	}
 	parts := strings.Split(spanString, separator)
 	if len(parts) != 2 {
 		return Span{}, errors.New("incorrect number of params in serialize")
@@ -551,7 +557,7 @@ func (s *Source) ToString() string {
 		strconv.Itoa(int(s.Index))
 }
 func (s *Source) SourceFromString(sourceString string) (Source, error) {
-	if sourceString == "nil" {
+	if sourceString == "nil" || sourceString == "" {
 		return Source{}, nil
 	}
 	separator := "~!src~"

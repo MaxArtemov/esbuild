@@ -6600,6 +6600,7 @@ func (c *linkerContext) appendIsolatedHashesForImportedChunks(
 		}
 	}
 
+	fmt.Println("will call waitForIsolatedHash (val)", chunk.waitForIsolatedHash)
 	// Mix in the hash for this chunk
 	hash.Write(chunk.waitForIsolatedHash())
 }

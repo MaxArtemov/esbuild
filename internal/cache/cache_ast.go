@@ -3,6 +3,7 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -201,37 +202,59 @@ func LoadCacheFromDir(cacheDir string, cacheSet *CacheSet) (*CacheSet, error) {
 		return nil, err
 	}
 
-	for _, file := range cacheFiles {
-		var serializedCacheEntry SerializedCacheEntry
-		fileInfo, err := file.Info()
+	var sourceIndexCache SourceIndexCache
+	_, err2 := sourceIndexCache.GetFromDisk()
 
-		if err != nil {
-			fmt.Println("Error getting file infos", fileInfo)
-		}
-		if fileInfo.Mode().IsRegular() {
-			// Build the full path to the file
-			filePath := filepath.Join(cacheDir, fileInfo.Name())
-			// entryCacheKey := strings.Split(filePath, "---")[0]
-			contents, readFileErr := os.ReadFile(filePath)
-			if readFileErr != nil {
-				fmt.Println("Error reading file info from cache", readFileErr, fileInfo)
-				return cacheSet, readFileErr
-			}
-			parseErr := json.Unmarshal(contents, &serializedCacheEntry)
-			cacheEntry, err := parseCacheEntryFromJson(serializedCacheEntry)
-			if err != nil {
-				fmt.Println("Error parsing cache entry from json", err)
-				panic(err)
-			}
-			cacheSet.AddJsEntry(cacheEntry)
+	// fmt.Println("Source index cache contents Filled, filling jsons", string(contents))
 
-			if parseErr != nil {
-				fmt.Println("Parse errror (Unmarshal)", parseErr)
-				return cacheSet, parseErr
-			}
-
-		}
+	if err2 != nil {
+		panic(err2)
 	}
+
+	var wg sync.WaitGroup
+
+	for _, file := range cacheFiles {
+		wg.Add(1)
+		go func(file fs.DirEntry) {
+			defer wg.Done()
+			// fmt.Println("Load cache from dir and fill initial cache!", file.Name())
+			var serializedCacheEntry SerializedCacheEntry
+			fileInfo, err := file.Info()
+
+			if err != nil {
+				fmt.Println("Error getting file infos", fileInfo)
+			}
+			if fileInfo.Mode().IsRegular() {
+				// Build the full path to the file
+				filePath := filepath.Join(cacheDir, fileInfo.Name())
+				// entryCacheKey := strings.Split(filePath, "---")[0]
+				contents, readFileErr := os.ReadFile(filePath)
+				if readFileErr != nil {
+					fmt.Println("Error reading file info from cache", readFileErr, fileInfo)
+					panic(readFileErr)
+					// return cacheSet, readFileErr
+				}
+				parseErr := json.Unmarshal(contents, &serializedCacheEntry)
+				cacheEntry, err := parseCacheEntryFromJson(serializedCacheEntry)
+				if err != nil {
+					fmt.Println("Error parsing cache entry from json", err)
+					panic(err)
+				}
+				cacheSet.AddJsEntry(cacheEntry)
+
+				if parseErr != nil {
+					fmt.Println("Parse errror (Unmarshal)", parseErr)
+					panic(parseErr)
+					// return cacheSet, parseErr
+				}
+
+			}
+		}(file)
+	}
+	wg.Wait()
+	cacheSet.SourceIndexCache.entries = sourceIndexCache.entries
+	cacheSet.SourceIndexCache.globEntries = sourceIndexCache.globEntries
+	cacheSet.SourceIndexCache.nextSourceIndex = sourceIndexCache.nextSourceIndex
 
 	return cacheSet, nil
 }
@@ -284,12 +307,12 @@ func (c *jsCacheEntry) UnmarshalJSON(b []byte) error {
 		fmt.Println("Error parsing cache entry from json", err)
 		return err
 	}
-	c = cacheEntry
+	*c = *cacheEntry
 	return nil
 }
 
 func (c *jsCacheEntry) getJsonPath() string {
-	contentHash := my_helpers.HashString(c.source.Contents)
+	contentHash := my_helpers.HashString(c.source.Contents + c.source.IdentifierName)
 	// entryCacheKey := c.source.KeyPath.ToString()
 
 	return "/Users/maxa/projects/esbuild/cache_jsons/" + contentHash + ".json"
@@ -298,12 +321,13 @@ func (c *jsCacheEntry) getJsonPath() string {
 func (c *JSCache) SetCacheEntry(entry *jsCacheEntry) {
 	c.mutex.Lock()
 	c.entries[entry.source.KeyPath] = entry
+	c.mutex.Unlock()
+	// TODO: UNCOMMENT when setting cache
 	entryPath := entry.source.KeyPath
-	defer c.mutex.Unlock()
 	go func(keyPath logger.Path, entryPath logger.Path) {
 		// Save the cache entry to a file
 		jsonPath := entry.getJsonPath()
-		fmt.Println("Save cache entry to file", entryPath, jsonPath)
+		// fmt.Println("Save cache entry to file", entryPath, jsonPath)
 		SaveCacheEntryToFile(c, jsonPath, entryPath)
 	}(entry.source.KeyPath, entryPath)
 }
@@ -314,6 +338,11 @@ func (c *JSCache) GetCacheEntries() *JSCacheEntries {
 	}
 }
 
+var (
+	counterHit  = 0
+	counterMiss = 0
+)
+
 func (c *JSCache) Parse(log logger.Log, source logger.Source, options js_parser.Options) (js_ast.AST, bool) {
 	// Check the cache
 	entry := func() *jsCacheEntry {
@@ -323,19 +352,35 @@ func (c *JSCache) Parse(log logger.Log, source logger.Source, options js_parser.
 	}()
 
 	// Cache hit
-	// TODO: this is the original check - if entry != nil && entry.source == source && entry.options.Equal(&options) { (including options) }
+	// TODO: this is the original check -
+	// if entry != nil && entry.source == source && entry.options.Equal(&options)
+	// { (including options) }
 	// We remove the options as serializing it would take a lot of time and for a POC its redundant. cache will be shared in between
 	// builds with different options which is incorrect but for the sake of POC we will ignore it.
-	if entry != nil && entry.source == source {
+
+	// entry.source.PrettyPath == source.PrettyPath && entry.source.Contents == source.Contents
+	// entry.source == source
+	// and then check how to update the index.
+	if entry != nil && entry.source.PrettyPath == source.PrettyPath && entry.source.Contents == source.Contents {
 		for _, msg := range entry.msgs {
 			log.AddMsg(msg)
 		}
-		fmt.Println("Cache HIT :)", entry.source)
+		// counterHit++
+		fmt.Println("Cache HIT :) Index:", source.Index, source.PrettyPath)
+		// fmt.Println("Current run index", source.Index)
+		// fmt.Println("Cached index", entry.source.Index)
+		// Not sure it's needed, but looks like its generated per build and
+		// if we want to persist cache it is essential to keep the index numbers consistent for a build
+		// if entry.source.Index != source.Index {
+		// 	fmt.Println("Switched index to", source.Index, "from", entry.source.Index)
+		// 	entry.source = source
+		// }
 		return entry.ast, entry.ok
 	}
 
 	// Cache miss
-	fmt.Println("Cache MISS :)", source.KeyPath.ToString())
+	counterMiss++
+	fmt.Println("Cache MISS :)", counterMiss, source.Index, source.PrettyPath)
 	tempLog := logger.NewDeferLog(logger.DeferLogAll, log.Overrides)
 	ast, ok := js_parser.Parse(tempLog, source, options)
 	msgs := tempLog.Done()

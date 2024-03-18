@@ -380,6 +380,7 @@ type OutputFile struct {
 func Build(options BuildOptions) BuildResult {
 	start := time.Now()
 
+	fmt.Println("Creating contextImpl CacheFromDisks", options.CacheFromDisk)
 	ctx, errors := contextImpl(options)
 	if ctx == nil {
 		return BuildResult{Errors: errors}
@@ -526,6 +527,7 @@ func (err *ContextError) Error() string {
 
 // Documentation: https://esbuild.github.io/api/#build
 func Context(buildOptions BuildOptions) (BuildContext, *ContextError) {
+	fmt.Println("Run context from build")
 	ctx, errors := contextImpl(buildOptions)
 	if ctx == nil {
 		return nil, &ContextError{Errors: errors}

@@ -126,7 +126,7 @@ func parseFile(args parseArgs) {
 		PrettyPath:     args.prettyPath,
 		IdentifierName: js_ast.GenerateNonUniqueNameFromPath(args.keyPath.Text),
 	}
-	// fmt.Println("parse file", args.sourceIndex, args.prettyPath)
+	fmt.Println("parse file index:", args.sourceIndex, args.prettyPath)
 
 	var loader config.Loader
 	var absResolveDir string
@@ -1263,7 +1263,6 @@ func ScanBundle(
 
 	// This may mutate "options" by the "tsconfig.json" override settings
 	res := resolver.NewResolver(call, fs, log, caches, &options)
-	fmt.Println("caches", caches)
 	s := scanner{
 		log:             log,
 		fs:              fs,
@@ -1410,6 +1409,7 @@ func (s *scanner) maybeParseFile(
 		return visited.sourceIndex
 	}
 
+	// TODO: see if we can avoid this allocation, and take from cache if exists
 	visited = visitedFile{
 		sourceIndex: s.allocateSourceIndex(visitedKey, cache.SourceIndexNormal),
 	}
@@ -2085,6 +2085,8 @@ func (s *scanner) scanAllDependencies() {
 		s.results[result.file.inputFile.Source.Index] = result
 		s.timer.End("Scanning" + result.file.inputFile.Source.PrettyPath)
 	}
+	// TODO: Uncomment when persisting cache
+	s.caches.SourceIndexCache.Persist()
 }
 
 func (s *scanner) generateResultForGlobResolve(
