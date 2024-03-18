@@ -1393,6 +1393,8 @@ func (s *scanner) maybeParseFile(
 	kind inputKind,
 	inject chan config.InjectedFile,
 ) uint32 {
+	s.timer.Begin("Parse file" + prettyPath)
+	defer s.timer.End("Parse file" + prettyPath)
 	path := resolveResult.PathPair.Primary
 	visitedKey := path
 	if visitedKey.Namespace == "file" {
@@ -2007,7 +2009,7 @@ func (s *scanner) scanAllDependencies() {
 
 		result := <-s.resultChannel
 		// fmt.Println("scanning file", result.file.inputFile.Source.PrettyPath)
-		s.timer.Begin("Scanning" + result.file.inputFile.Source.PrettyPath)
+		// s.timer.Begin("Scanning" + result.file.inputFile.Source.PrettyPath)
 		s.remaining--
 		if !result.ok {
 			continue
@@ -2070,7 +2072,7 @@ func (s *scanner) scanAllDependencies() {
 		}
 
 		s.results[result.file.inputFile.Source.Index] = result
-		s.timer.End("Scanning" + result.file.inputFile.Source.PrettyPath)
+		// s.timer.End("Scanning" + result.file.inputFile.Source.PrettyPath)
 	}
 	// TODO: Uncomment when persisting cache
 	// s.caches.SourceIndexCache.Persist()

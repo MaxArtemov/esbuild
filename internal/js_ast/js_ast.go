@@ -6,6 +6,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/evanw/esbuild/internal/ast"
 	"github.com/evanw/esbuild/internal/logger"
@@ -1051,6 +1052,13 @@ var scopeNames map[*Scope]string
 func init() {
 	scopeNames = make(map[*Scope]string)
 	mapping = make(map[string]S)
+	nsMembers = make(map[string]TSNamespaceMemberData)
+
+	nsMembers[reflect.TypeOf(&TSNamespaceMemberProperty{}).String()] = &TSNamespaceMemberProperty{}
+	nsMembers[reflect.TypeOf(&TSNamespaceMemberNamespace{}).String()] = &TSNamespaceMemberNamespace{}
+	nsMembers[reflect.TypeOf(&TSNamespaceMemberEnumNumber{}).String()] = &TSNamespaceMemberEnumNumber{}
+	nsMembers[reflect.TypeOf(&TSNamespaceMemberEnumString{}).String()] = &TSNamespaceMemberEnumString{}
+
 	mapping[reflect.TypeOf(&SBlock{}).String()] = &SBlock{}
 	mapping[reflect.TypeOf(&SComment{}).String()] = &SComment{}
 	mapping[reflect.TypeOf(&SDebugger{}).String()] = &SDebugger{}
@@ -1850,6 +1858,71 @@ type TSNamespaceMemberData interface {
 	isTSNamespaceMember()
 }
 
+var nsMembers map[string]TSNamespaceMemberData
+
+func (e TSNamespaceMember) MarshalJSON() ([]byte, error) {
+	concreteType := ""
+	if e.Data != nil {
+		concreteType = reflect.TypeOf(e.Data).String() // same as using fmt. %T
+	}
+
+	// typeName := fmt.Sprintf("%T", s.Data)
+
+	val, err := json.Marshal(&struct {
+		TypeName    string
+		Loc         logger.Loc
+		Data        TSNamespaceMemberData
+		IsEnumValue bool
+	}{
+		TypeName:    concreteType,
+		Loc:         e.Loc,
+		Data:        e.Data,
+		IsEnumValue: e.IsEnumValue,
+	})
+	if err != nil {
+		fmt.Println("Error marshaling TSNamespaceMember with name", err)
+		panic(err)
+	}
+	return val, nil
+}
+
+type RawTNamespace struct {
+	Data        json.RawMessage // delay parsing until we type to create
+	Loc         logger.Loc
+	IsEnumValue bool
+	TypeName    string
+}
+
+func (e *TSNamespaceMember) UnmarshalJSON(data []byte) error {
+	// TODO: check for recursive statements
+	raw := RawTNamespace{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		fmt.Println("Error Unmarshalling TSNamespaceMember with name", err)
+		panic(err)
+	}
+	if raw.TypeName == "" {
+		// fmt.Println("Expression with no type (no data field) unmarshaled.")
+		e.Data = nil
+		e.Loc = raw.Loc
+		e.IsEnumValue = false
+		return nil
+	}
+
+	typePointer := nsMembers[raw.TypeName]
+	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(TSNamespaceMemberData)
+	err2 := json.Unmarshal(raw.Data, &val)
+	if err2 != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err2)
+		panic(err2)
+	}
+	e.Data = val
+	e.Loc = raw.Loc
+	e.IsEnumValue = raw.IsEnumValue
+
+	return nil
+}
+
 func (TSNamespaceMemberProperty) isTSNamespaceMember()   {}
 func (TSNamespaceMemberNamespace) isTSNamespaceMember()  {}
 func (TSNamespaceMemberEnumNumber) isTSNamespaceMember() {}
@@ -2319,13 +2392,69 @@ func EnumValToString(tsEnum TSEnumValue) string {
 	return fmt.Sprintf("String: %v, Number: %v", tsEnum.String, tsEnum.Number)
 }
 
-func EnumValFromString(tsEnumStr string) TSEnumValue {
-	tsEnum := TSEnumValue{}
-	_, err := fmt.Sscanf(tsEnumStr, "String: %v, Number: %v", tsEnum.String, tsEnum.Number)
+func ParseEnumValFromString(str string) (*TSEnumValue, error) {
+	// Split the string into parts
+	parts := strings.Split(str, ", ")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid EnumVal string format")
+	}
+
+	var tsEnum TSEnumValue
+
+	// Parse the string part
+	stringPart := strings.Split(parts[0], ": ")
+	if len(stringPart) != 2 {
+		return nil, fmt.Errorf("invalid string part format")
+	}
+	if stringPart[1] != "nil" {
+		// If it's not nil, parse the slice of uint16
+		var strSlice []uint16
+		strPart := stringPart[1][1 : len(stringPart[1])-1] // Remove brackets
+		if strPart != "" {
+			strValues := strings.Split(strPart, " ")
+			for _, value := range strValues {
+				intValue, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, err
+				}
+				strSlice = append(strSlice, uint16(intValue))
+			}
+		}
+		tsEnum.String = strSlice
+	}
+
+	// Parse the number part
+	numberPart := strings.Split(parts[1], ": ")
+	if len(numberPart) != 2 {
+		return nil, fmt.Errorf("invalid number part format")
+	}
+	num, err := strconv.ParseFloat(numberPart[1], 64)
 	if err != nil {
+		return nil, err
+	}
+	tsEnum.Number = num
+
+	return &tsEnum, nil
+}
+
+func EnumValFromString(tsEnumStr string) TSEnumValue {
+	// tsEnum := TSEnumValue{}
+	tsEnum, err := ParseEnumValFromString(tsEnumStr)
+	if err != nil {
+		fmt.Println("tsEnumStr", tsEnumStr)
 		fmt.Println("Error parsing TSEnumValue:", err)
 	}
-	return tsEnum
+	return *tsEnum
+	// var str []uint16
+	// var num float64
+	// _, err := fmt.Sscanf(tsEnumStr, "String: %v, Number: %v", &str, &num)
+	// if err != nil {
+	// 	fmt.Println("tsEnumStr", tsEnumStr)
+	// 	fmt.Println("Error parsing TSEnumValue:", err)
+	// }
+	// tsEnum.String = str
+	// tsEnum.Number = num
+	// return tsEnum
 }
 
 type ConstValueKind uint8

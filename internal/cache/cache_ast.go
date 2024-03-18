@@ -390,7 +390,7 @@ func (c *JSCache) Parse(log logger.Log, source logger.Source, options js_parser.
 			log.AddMsg(msg)
 		}
 		// counterHit++
-		fmt.Println("Cache HIT :) Index:", source.Index, source.PrettyPath)
+		// fmt.Println("Cache HIT :) Index:", source.Index, source.PrettyPath)
 		// fmt.Println("Current run index", source.Index)
 		// fmt.Println("Cached index", entry.source.Index)
 		// Not sure it's needed, but looks like its generated per build and
@@ -404,7 +404,7 @@ func (c *JSCache) Parse(log logger.Log, source logger.Source, options js_parser.
 
 	// Cache miss
 	counterMiss++
-	fmt.Println("Cache MISS :)", counterMiss, source.Index, source.PrettyPath)
+	// fmt.Println("Cache MISS :)", counterMiss, source.Index, source.PrettyPath)
 	tempLog := logger.NewDeferLog(logger.DeferLogAll, log.Overrides)
 	ast, ok := js_parser.Parse(tempLog, source, options)
 	msgs := tempLog.Done()

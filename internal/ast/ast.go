@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/evanw/esbuild/internal/helpers"
 	"github.com/evanw/esbuild/internal/logger"
@@ -172,8 +173,9 @@ type ImportRecord struct {
 	Kind  ImportKind
 }
 
+var template = "{ AssertOrWith: %s GlobPattern: %s Path: %s Range: %s ErrorHandlerLoc: %s SourceIndex: %d CopySourceIndex: %d Flags: %d Kind: %s }"
+
 func (record *ImportRecord) ToString() string {
-	template := "{ AssertOrWith: %s GlobPattern: %s Path: %s Range: %s ErrorHandlerLoc: %s SourceIndex: %d CopySourceIndex: %d Flags: %d Kind: %s }"
 
 	return fmt.Sprintf(
 		template,
@@ -204,7 +206,7 @@ func (record *ImportRecord) FromString(formattedString string) (*ImportRecord, e
 
 	_, err := fmt.Sscanf(
 		formattedString,
-		"{ AssertOrWith: %s GlobPattern: %s Path: %s Range: %s ErrorHandlerLoc: %s SourceIndex: %d CopySourceIndex: %d Flags: %d Kind: %s }",
+		template,
 		&AssertOrWithStr,
 		&GlobPatternStr,
 		&PathStr,
@@ -216,7 +218,9 @@ func (record *ImportRecord) FromString(formattedString string) (*ImportRecord, e
 		&KindStr,
 	)
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("formattedString", formattedString)
+		fmt.Println("template", template)
+		fmt.Println("Error parsing:15", err)
 		return nil, err
 	}
 	// If you need to convert Kind back to its original type, you can use strconv.Atoi
@@ -349,42 +353,42 @@ func (assertOrWith *ImportAssertOrWith) FromString(formattedString string) (*Imp
 		&Keyword,
 	)
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:1", err)
 		return nil, err
 	}
 
 	KeywordLoc, err := logger.LocFromString(Keyword)
 
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:2", err)
 		return nil, err
 	}
 
 	InnerOpenBraceLoc, err := logger.LocFromString(InnerOpenBraceLocStr)
 
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:3", err)
 		return nil, err
 	}
 
 	InnerCloseBraceLoc, err := logger.LocFromString(InnerCloseBraceLocStr)
 
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:4", err)
 		return nil, err
 	}
 
 	OuterOpenBraceLoc, err := logger.LocFromString(OuterOpenBraceLocStr)
 
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:5", err)
 		return nil, err
 	}
 
 	OuterCloseBraceLoc, err := logger.LocFromString(OuterCloseBraceLocStr)
 
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:6", err)
 		return nil, err
 	}
 
@@ -392,7 +396,7 @@ func (assertOrWith *ImportAssertOrWith) FromString(formattedString string) (*Imp
 
 	KeywordUint, err := strconv.Atoi(Keyword)
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:7", err)
 		return nil, err
 	}
 
@@ -401,7 +405,7 @@ func (assertOrWith *ImportAssertOrWith) FromString(formattedString string) (*Imp
 	for _, entry := range EntriesStr {
 		newEntry, err := Entry.FromString(entry)
 		if err != nil {
-			fmt.Println("Error parsing:", err)
+			fmt.Println("Error parsing:8", err)
 			return nil, err
 		}
 		Entries = append(Entries, *newEntry)
@@ -460,7 +464,7 @@ func (entry *AssertOrWithEntry) FromString(formattedString string) (*AssertOrWit
 	)
 
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:9", err)
 		return nil, err
 	}
 
@@ -469,13 +473,13 @@ func (entry *AssertOrWithEntry) FromString(formattedString string) (*AssertOrWit
 
 	keyLoc, err := logger.LocFromString(KeyLocStr)
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:10", err)
 		return nil, err
 	}
 
 	valueLoc, err := logger.LocFromString(ValueLocStr)
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:11", err)
 		return nil, err
 	}
 
@@ -503,9 +507,12 @@ type GlobPattern struct {
 	Kind        ImportKind
 }
 
+var globTemplate = "Parts:%sExportAlias:%sKind:%d"
+
 func (pattern *GlobPattern) ToString() string {
 	partsStr := helpers.GlobPatternToString(pattern.Parts)
-	return fmt.Sprintf("Parts: %s ExportAlias: %s Kind: %v", partsStr, pattern.ExportAlias, pattern.Kind)
+	str := partsStr + "(seperator)" + pattern.ExportAlias + "(seperator)" + strconv.Itoa(int(pattern.Kind))
+	return str
 }
 
 func (pattern *GlobPattern) FromString(formattedString string) (*GlobPattern, error) {
@@ -515,19 +522,21 @@ func (pattern *GlobPattern) FromString(formattedString string) (*GlobPattern, er
 	var (
 		PartsStr    string
 		ExportAlias string
-		Kind        ImportKind
 	)
+	strParts := strings.Split(formattedString, "(seperator)")
 
-	_, err := fmt.Sscanf(
-		formattedString,
-		"Parts: %s ExportAlias: %s Kind: %s",
-		&PartsStr,
-		&ExportAlias,
-		&Kind,
-	)
+	if len(strParts) != 3 {
+		// Invalid string format
+		fmt.Println("Error parsing:12")
+		fmt.Println("formattedString", formattedString)
+		panic("Invalid string format")
+	}
+	PartsStr = strParts[0]
+	ExportAlias = strParts[1]
+	KindInt, err := strconv.Atoi(strParts[2])
 	if err != nil {
-		fmt.Println("Error parsing:", err)
-		return nil, err
+		fmt.Println("Error parsing:112", err)
+		panic("booz")
 	}
 
 	parts := helpers.ParseGlobPattern(PartsStr)
@@ -535,7 +544,7 @@ func (pattern *GlobPattern) FromString(formattedString string) (*GlobPattern, er
 	return &GlobPattern{
 		Parts:       parts,
 		ExportAlias: ExportAlias,
-		Kind:        ImportKind(Kind),
+		Kind:        ImportKind(KindInt),
 	}, nil
 }
 
@@ -727,13 +736,13 @@ func (locRef *LocRef) FromString(formattedString string) (*LocRef, error) {
 		&RefStr,
 	)
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:13", err)
 		return nil, err
 	}
 
 	loc, err := logger.LocFromString(LocStr)
 	if err != nil {
-		fmt.Println("Error parsing:", err)
+		fmt.Println("Error parsing:14", err)
 		return nil, err
 	}
 
