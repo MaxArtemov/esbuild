@@ -2086,7 +2086,7 @@ func (s *scanner) scanAllDependencies() {
 		s.timer.End("Scanning" + result.file.inputFile.Source.PrettyPath)
 	}
 	// TODO: Uncomment when persisting cache
-	s.caches.SourceIndexCache.Persist()
+	// s.caches.SourceIndexCache.Persist()
 }
 
 func (s *scanner) generateResultForGlobResolve(

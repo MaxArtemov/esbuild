@@ -322,14 +322,14 @@ func (c *JSCache) SetCacheEntry(entry *jsCacheEntry) {
 	c.mutex.Lock()
 	c.entries[entry.source.KeyPath] = entry
 	c.mutex.Unlock()
-	// TODO: UNCOMMENT when setting cache
-	entryPath := entry.source.KeyPath
-	go func(keyPath logger.Path, entryPath logger.Path) {
-		// Save the cache entry to a file
-		jsonPath := entry.getJsonPath()
-		// fmt.Println("Save cache entry to file", entryPath, jsonPath)
-		SaveCacheEntryToFile(c, jsonPath, entryPath)
-	}(entry.source.KeyPath, entryPath)
+	// TODO: Uncomment when persisting cache
+	// entryPath := entry.source.KeyPath
+	// go func(keyPath logger.Path, entryPath logger.Path) {
+	// 	// Save the cache entry to a file
+	// 	jsonPath := entry.getJsonPath()
+	// 	// fmt.Println("Save cache entry to file", entryPath, jsonPath)
+	// 	SaveCacheEntryToFile(c, jsonPath, entryPath)
+	// }(entry.source.KeyPath, entryPath)
 }
 
 func (c *JSCache) GetCacheEntries() *JSCacheEntries {
