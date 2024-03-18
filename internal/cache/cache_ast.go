@@ -194,6 +194,30 @@ func parseCacheEntryFromJson(serializedCacheEntry SerializedCacheEntry) (*jsCach
 	return &cacheEntry, nil
 }
 
+func (c *jsCacheEntry) GetSingleCacheEntryFromDisk(entry *jsCacheEntry) *jsCacheEntry {
+	filePath := entry.getJsonPath()
+	contents, readFileErr := os.ReadFile(filePath)
+	if readFileErr != nil {
+		fmt.Println("Error reading file info from cache", readFileErr, filePath)
+		panic(readFileErr)
+		// return cacheSet, readFileErr
+	}
+	var serializedCacheEntry SerializedCacheEntry
+	parseErr := json.Unmarshal(contents, &serializedCacheEntry)
+	if parseErr != nil {
+		fmt.Println("Error parsing cache entry from json", parseErr)
+		panic(parseErr)
+
+	}
+	cacheEntry, err := parseCacheEntryFromJson(serializedCacheEntry)
+	if err != nil {
+		fmt.Println("Error parsing cache entry from json", err)
+		panic(err)
+	}
+
+	return cacheEntry
+}
+
 // Load the cache from a file
 func LoadCacheFromDir(cacheDir string, cacheSet *CacheSet) (*CacheSet, error) {
 	fmt.Println("Load cache from dir and fill initial cache!", cacheDir)

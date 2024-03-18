@@ -2017,18 +2017,6 @@ func (s *scanner) scanAllDependencies() {
 		// Don't try to resolve paths if we're not bundling
 		if recordsPtr := result.file.inputFile.Repr.ImportRecords(); s.options.Mode == config.ModeBundle && recordsPtr != nil {
 			records := *recordsPtr
-			// fmt.Println("going to scan import records of " + result.file.inputFile.Source.PrettyPath)
-			// for _, importRecord := range records {
-			// fmt.Println("importRecord!", importRecord.Path.Text)
-			// if importRecord.AssertOrWith != nil && importRecord.AssertOrWith.Entries != nil {
-			// entriesLen := len(importRecord.AssertOrWith.Entries)
-			// fmt.Println("importRecord", importRecord.Path.Text, "entries length", entriesLen)
-			// if entriesLen > 0 {
-			// fmt.Println("importRecord:last", importRecord.AssertOrWith.Entries[len(importRecord.AssertOrWith.Entries)-1])
-			// fmt.Println("importRecord:first", importRecord.AssertOrWith.Entries[0])
-			// }
-			// }
-			// }
 			for importRecordIndex := range records {
 				record := &records[importRecordIndex]
 
