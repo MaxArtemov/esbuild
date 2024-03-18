@@ -144,7 +144,6 @@ func parseFile(args parseArgs) {
 	} else {
 		result, ok := runOnLoadPlugins(
 			args.options.Plugins,
-			args.res,
 			args.fs,
 			&args.caches.FSCache,
 			args.log,
@@ -246,7 +245,9 @@ func parseFile(args parseArgs) {
 		result.ok = true
 
 	case config.LoaderJSON, config.LoaderWithTypeJSON:
-		expr, ok := args.caches.JSONCache.Parse(args.log, source, js_parser.JSONOptions{})
+		expr, ok := args.caches.JSONCache.Parse(args.log, source, js_parser.JSONOptions{
+			UnsupportedJSFeatures: args.options.UnsupportedJSFeatures,
+		})
 		ast := js_parser.LazyExportAST(args.log, source, js_parser.OptionsFromConfig(&args.options), expr, "")
 		if loader == config.LoaderWithTypeJSON {
 			// The exports kind defaults to "none", in which case the linker picks
@@ -541,7 +542,7 @@ func parseFile(args parseArgs) {
 				tracker := logger.MakeLineColumnTracker(&source)
 
 				if path, contents := extractSourceMapFromComment(args.log, args.fs, &args.caches.FSCache,
-					args.res, &source, &tracker, sourceMapComment, absResolveDir); contents != nil {
+					&source, &tracker, sourceMapComment, absResolveDir); contents != nil {
 					prettyPath := resolver.PrettyPath(args.fs, path)
 					log := logger.NewDeferLog(logger.DeferLogNoVerboseOrDebug, args.log.Overrides)
 
@@ -744,7 +745,6 @@ func extractSourceMapFromComment(
 	log logger.Log,
 	fs fs.FS,
 	fsCache *cache.FSCache,
-	res *resolver.Resolver,
 	source *logger.Source,
 	tracker *logger.LineColumnTracker,
 	comment logger.Span,
@@ -983,7 +983,6 @@ type loaderPluginResult struct {
 
 func runOnLoadPlugins(
 	plugins []config.Plugin,
-	res *resolver.Resolver,
 	fs fs.FS,
 	fsCache *cache.FSCache,
 	log logger.Log,
