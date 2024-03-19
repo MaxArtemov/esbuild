@@ -77,8 +77,10 @@
 package api
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/evanw/esbuild/internal/cache"
 	"github.com/evanw/esbuild/internal/logger"
 )
 
@@ -266,10 +268,12 @@ const (
 // Build API
 
 type BuildOptions struct {
-	Color       StderrColor         // Documentation: https://esbuild.github.io/api/#color
-	LogLevel    LogLevel            // Documentation: https://esbuild.github.io/api/#log-level
-	LogLimit    int                 // Documentation: https://esbuild.github.io/api/#log-limit
-	LogOverride map[string]LogLevel // Documentation: https://esbuild.github.io/api/#log-override
+	CacheFromDisk bool
+	Caches        *cache.CacheSet
+	Color         StderrColor         // Documentation: https://esbuild.github.io/api/#color
+	LogLevel      LogLevel            // Documentation: https://esbuild.github.io/api/#log-level
+	LogLimit      int                 // Documentation: https://esbuild.github.io/api/#log-limit
+	LogOverride   map[string]LogLevel // Documentation: https://esbuild.github.io/api/#log-override
 
 	Sourcemap      SourceMap      // Documentation: https://esbuild.github.io/api/#sourcemap
 	SourceRoot     string         // Documentation: https://esbuild.github.io/api/#source-root
@@ -376,11 +380,12 @@ type OutputFile struct {
 func Build(options BuildOptions) BuildResult {
 	start := time.Now()
 
+	fmt.Println("Creating contextImpl CacheFromDisks", options.CacheFromDisk)
 	ctx, errors := contextImpl(options)
 	if ctx == nil {
 		return BuildResult{Errors: errors}
 	}
-
+	fmt.Println("Run rebuild from build")
 	result := ctx.Rebuild()
 
 	// Print a summary of the generated files to stderr. Except don't do
@@ -522,6 +527,7 @@ func (err *ContextError) Error() string {
 
 // Documentation: https://esbuild.github.io/api/#build
 func Context(buildOptions BuildOptions) (BuildContext, *ContextError) {
+	fmt.Println("Run context from build")
 	ctx, errors := contextImpl(buildOptions)
 	if ctx == nil {
 		return nil, &ContextError{Errors: errors}

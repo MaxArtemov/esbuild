@@ -1,0 +1,1 @@
+export const some3 = 'some3'

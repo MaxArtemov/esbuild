@@ -80,15 +80,16 @@ func (t *Timer) Log(log logger.Log) {
 			top := stack[last]
 			stack = stack[:last]
 			if item.name != top.name {
+				fmt.Println("item.name", item.name)
+				fmt.Println("top.name", top.name)
 				panic("Internal error")
 			}
 			notes[top.index].Text = fmt.Sprintf("%s%s: %dms",
 				strings.Repeat("  ", indent),
 				top.name,
-				item.time.Sub(top.time).Milliseconds())
+				item.time.Sub(top.time).Microseconds())
 		}
 	}
-
 	log.AddIDWithNotes(logger.MsgID_None, logger.Info, nil, logger.Range{},
 		"Timing information (times may not nest hierarchically due to parallelism)", notes)
 }

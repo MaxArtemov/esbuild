@@ -128,6 +128,7 @@ var helpText = func(colors logger.Colors) string {
   --tree-shaking=...        Force tree shaking on or off (false | true)
   --tsconfig=...            Use this tsconfig.json file instead of other ones
   --version                 Print the current version (` + esbuildVersion + `) and exit
+  --disk-cache=...          Cache directory for speeding up recompilation
 
 ` + colors.Bold + `Examples:` + colors.Reset + `
   ` + colors.Dim + `# Produces dist/entry_point.js and dist/entry_point.js.map` + colors.Reset + `
@@ -163,6 +164,9 @@ func main() {
 	isWatch := false
 	isWatchForever := false
 
+	// use timer always
+	api_helpers.UseTimer = true
+
 	// Do an initial scan over the argument list
 	argsEnd := 0
 	for _, arg := range osArgs {
@@ -182,11 +186,6 @@ func main() {
 
 		case strings.HasPrefix(arg, "--trace="):
 			traceFile = arg[len("--trace="):]
-
-		case strings.HasPrefix(arg, "--timing"):
-			// This is a hidden flag because it's only intended for debugging esbuild
-			// itself. The output is not documented and not stable.
-			api_helpers.UseTimer = true
 
 		case strings.HasPrefix(arg, "--cpuprofile="):
 			cpuprofileFile = arg[len("--cpuprofile="):]

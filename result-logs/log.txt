@@ -1,0 +1,85 @@
+parseOptionsImpl
+@@@@@@@@@@@@@@@@@@@@@@ bundle
+Running build
+Creating contextImpl CacheFromDisks false
+buildOpts.CacheFromDisk false
+Make -cache set?
+Made cache set &{{map[] {0 0}} {map[] {0 0}} {map[] {0 0}} {map[] {0 0}} {map[] map[] {0 0} 1}}
+Run rebuild from build
+Cache MISS :) 1 0 .pnp.cjs
+parse file index: 1 testcode/some.js
+Cache MISS :) 2 1 testcode/some.js
+parse file index: 4 testcode/another3.js
+parse file index: 3 testcode/another2.js
+parse file index: 2 testcode/another.js
+Cache MISS :) 3 4 testcode/another3.js
+Cache MISS :) 4 2 testcode/another.js
+Cache MISS :) 5 3 testcode/another2.js
+parse file index: 5 testcode/another4.js
+parse file index: 6 testcode/some2.js
+Cache MISS :) 6 5 testcode/another4.js
+parse file index: 7 testcode/another5.js
+Cache MISS :) 7 6 testcode/some2.js
+Cache MISS :) 8 7 testcode/another5.js
+parse file index: 11 testcode/some6.js
+parse file index: 9 testcode/some4.js
+parse file index: 10 testcode/some5.js
+parse file index: 8 testcode/some3.js
+Cache MISS :) 9 11 testcode/some6.js
+Cache MISS :) 10 9 testcode/some4.js
+Cache MISS :) 11 10 testcode/some5.js
+Cache MISS :) 12 8 testcode/some3.js
+▶ [INFO] Timing information (times may not nest hierarchically due to parallelism)
+
+  make-cache-set: 0ms
+  Scan phase: 5ms
+    On-start callbacks: 0ms
+    Preprocess injected files: 0ms
+    Add entry points: 1ms
+      Parse filetestcode/some.js: 0ms
+    Scan all dependencies: 3ms
+      Parse filetestcode/another.js: 0ms
+      Parse filetestcode/another2.js: 0ms
+      Parse filetestcode/another3.js: 0ms
+      Parse runtime: 1ms
+      Parse filetestcode/another4.js: 0ms
+      Parse filetestcode/some2.js: 0ms
+      Parse filetestcode/another5.js: 0ms
+      Parse filetestcode/some3.js: 0ms
+      Parse filetestcode/some4.js: 0ms
+      Parse filetestcode/some5.js: 0ms
+      Parse filetestcode/some6.js: 0ms
+    Process scanned files: 0ms
+  Compile phase: 0ms
+    Spawn source map tasks: 0ms
+    Link: 0ms
+      Clone linker graph: 0ms
+      Scan imports and exports: 0ms
+        Step 1: 0ms
+        Step 2: 0ms
+        Step 3: 0ms
+        Step 4: 0ms
+        Step 5: 0ms
+        Step 6: 0ms
+      Tree shaking: 0ms
+      Code splitting: 0ms
+      Compute chunks: 0ms
+      Compute cross-chunk dependencies: 0ms
+      Waiting for mangle cache: 0ms
+      Mangle props: 0ms
+      Mangle local CSS: 0ms
+      Generate chunks: 0ms
+        Generate chunk "some.js": 0ms
+          Minify symbols: 0ms
+            Compute reserved names: 0ms
+            Accumulate symbol counts: 0ms
+              Parallel phase: 0ms
+              Serial phase: 0ms
+            Assign names by frequency: 0ms
+          Print JavaScript files: 0ms
+          Join JavaScript files: 0ms
+        Generate final output files: 0ms
+  Write output files: 0ms
+  On-end callbacks: 0ms
+
+var s="some3";var d="some3";var i="some3";var b="some3";var g="some2"+s;console.log("some2",g);console.log("some4",d);console.log("some5",i);console.log("some6",b);var u="usedVar";console.log("some2",g);var f="usedVar";var h="usedVar";var j="usedVar";console.log("temp",h);var n="usedVar";console.log("wtf",j);var D="wrold",E="wrold",F="wrold",G="wrold",H="wrold",I="wrold",J="wrold",K="wrold",L=u;console.log("usedVar2",f);console.log("usedVar3",n);export{D as hello,E as hello2,F as hello3,G as hello4,H as hello5,I as hello6,J as hello7,K as hello8,L as hello9};

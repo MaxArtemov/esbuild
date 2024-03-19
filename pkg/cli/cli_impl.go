@@ -88,11 +88,19 @@ func parseOptionsImpl(
 	kind parseOptionsKind,
 ) (extras parseOptionsExtras, err *cli_helpers.ErrorWithNote) {
 	hasBareSourceMapFlag := false
-
+	fmt.Println("parseOptionsImpl")
 	// Parse the arguments now that we know what we're parsing
 	for _, arg := range osArgs {
 		switch {
+		case isBoolFlag(arg, "--disk-cache") && buildOpts != nil:
+			fmt.Println("@@@@@@@@@@@@@@@@@@@@@@ disk cache", arg)
+			if value, err := parseBoolFlag(arg, true); err == nil {
+				fmt.Println("value", value)
+				buildOpts.CacheFromDisk = value
+			}
+			fmt.Println("error parsing param", err)
 		case isBoolFlag(arg, "--bundle") && buildOpts != nil:
+			fmt.Println("@@@@@@@@@@@@@@@@@@@@@@ bundle")
 			if value, err := parseBoolFlag(arg, true); err != nil {
 				return parseOptionsExtras{}, err
 			} else {
@@ -295,7 +303,6 @@ func parseOptionsImpl(
 					*treeShaking = api.TreeShakingFalse
 				}
 			}
-
 		case isBoolFlag(arg, "--ignore-annotations"):
 			if value, err := parseBoolFlag(arg, true); err != nil {
 				return parseOptionsExtras{}, err
@@ -1313,6 +1320,7 @@ func runImpl(osArgs []string) int {
 			<-make(chan struct{})
 		}
 
+		fmt.Println("Running build")
 		// This prints the summary which the context API doesn't do
 		result := api.Build(*buildOptions)
 

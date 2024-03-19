@@ -1,7 +1,12 @@
 package js_ast
 
 import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/evanw/esbuild/internal/ast"
 	"github.com/evanw/esbuild/internal/logger"
@@ -392,6 +397,59 @@ type Binding struct {
 	Loc  logger.Loc
 }
 
+var bindingMapping map[string]B
+
+func (b Binding) MarshalJSON() ([]byte, error) {
+	// TODO: check for recursive statements (e.g. SBlock)
+	concreteType := ""
+	if b.Data != nil {
+		concreteType = reflect.TypeOf(b.Data).String() // same as using fmt. %T
+	}
+
+	// typeName := fmt.Sprintf("%T", s.Data)
+
+	val, err := json.Marshal(&struct {
+		TypeName string
+		Loc      logger.Loc
+		Data     B
+	}{
+		TypeName: concreteType,
+		Loc:      b.Loc,
+		Data:     b.Data,
+	})
+	if err != nil {
+		fmt.Println("Error marshaling binding with name", err)
+		return []byte{}, err
+	}
+	return val, nil
+}
+
+func (s *Binding) UnmarshalJSON(data []byte) error {
+	// TODO: check for recursive statements
+	raw := RawStmt{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		fmt.Println("Error Unmarshalling binding with name", err)
+		return err
+	}
+	typePointer := bindingMapping[raw.TypeName]
+	if raw.TypeName == "" {
+		// fmt.Println("Binding with no type (no data field) unmarshaled.")
+		s.Data = nil
+		s.Loc = raw.Loc
+		return nil
+	}
+	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(B)
+	err2 := json.Unmarshal(raw.Data, &val)
+	if err2 != nil {
+		fmt.Println("Error Unmarshalling binding with name", err2)
+		return err2
+	}
+	s.Data = val
+	s.Loc = raw.Loc
+	return nil
+}
+
 // This interface is never called. Its purpose is to encode a variant type in
 // Go's type system.
 type B interface{ isBinding() }
@@ -421,6 +479,86 @@ type BObject struct {
 type Expr struct {
 	Data E
 	Loc  logger.Loc
+}
+
+var exprMapping map[string]E
+
+func (e Expr) MarshalJSON() ([]byte, error) {
+	// TODO: check for recursive statements (e.g. SBlock)
+	concreteType := ""
+	if e.Data != nil {
+		concreteType = reflect.TypeOf(e.Data).String() // same as using fmt. %T
+	}
+
+	if concreteType == "*js_ast.ENumber" {
+		val := e.Data.(*ENumber)
+		if math.IsInf(val.Value, 1) {
+			e.Data = &ENumber{Value: math.MaxFloat64}
+		} else if math.IsInf(val.Value, -1) {
+			e.Data = &ENumber{Value: math.SmallestNonzeroFloat64}
+		} else if math.IsNaN(val.Value) {
+			// TODO: find better logic
+			e.Data = &ENumber{Value: -12312333}
+		}
+	}
+
+	// typeName := fmt.Sprintf("%T", s.Data)
+
+	val, err := json.Marshal(&struct {
+		TypeName string
+		Loc      logger.Loc
+		Data     E
+	}{
+		TypeName: concreteType,
+		Loc:      e.Loc,
+		Data:     e.Data,
+	})
+	if err != nil {
+		fmt.Println("Error marshaling expr with name", err)
+		panic(err)
+		return []byte{}, err
+	}
+	return val, nil
+}
+
+func (e *Expr) UnmarshalJSON(data []byte) error {
+	// TODO: check for recursive statements
+	raw := RawStmt{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err)
+		panic(err)
+		return err
+	}
+	if raw.TypeName == "" {
+		// fmt.Println("Expression with no type (no data field) unmarshaled.")
+		e.Data = nil
+		e.Loc = raw.Loc
+		return nil
+	}
+
+	typePointer := exprMapping[raw.TypeName]
+	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(E)
+	err2 := json.Unmarshal(raw.Data, &val)
+	if err2 != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err2)
+		panic(err2)
+		return err2
+	}
+	e.Data = val
+	e.Loc = raw.Loc
+	if raw.TypeName == "*js_ast.ENumber" {
+		val := e.Data.(*ENumber)
+		if val.Value == math.MaxFloat64 {
+			e.Data = &ENumber{Value: math.Inf(1)}
+		} else if val.Value == math.SmallestNonzeroFloat64 {
+			e.Data = &ENumber{Value: math.Inf(-1)}
+		} else if val.Value == -12312333 {
+			// TODO: find better logic
+			e.Data = &ENumber{Value: math.NaN()}
+		}
+	}
+	return nil
 }
 
 // This interface is never called. Its purpose is to encode a variant type in
@@ -902,6 +1040,165 @@ type Stmt struct {
 	Loc  logger.Loc
 }
 
+type RawStmt struct {
+	Data     json.RawMessage // delay parsing until we type to create
+	Loc      logger.Loc
+	TypeName string
+}
+
+var mapping map[string]S
+var scopeNames map[*Scope]string
+
+func init() {
+	scopeNames = make(map[*Scope]string)
+	mapping = make(map[string]S)
+	nsMembers = make(map[string]TSNamespaceMemberData)
+
+	nsMembers[reflect.TypeOf(&TSNamespaceMemberProperty{}).String()] = &TSNamespaceMemberProperty{}
+	nsMembers[reflect.TypeOf(&TSNamespaceMemberNamespace{}).String()] = &TSNamespaceMemberNamespace{}
+	nsMembers[reflect.TypeOf(&TSNamespaceMemberEnumNumber{}).String()] = &TSNamespaceMemberEnumNumber{}
+	nsMembers[reflect.TypeOf(&TSNamespaceMemberEnumString{}).String()] = &TSNamespaceMemberEnumString{}
+
+	mapping[reflect.TypeOf(&SBlock{}).String()] = &SBlock{}
+	mapping[reflect.TypeOf(&SComment{}).String()] = &SComment{}
+	mapping[reflect.TypeOf(&SDebugger{}).String()] = &SDebugger{}
+	mapping[reflect.TypeOf(&SDirective{}).String()] = &SDirective{}
+	mapping[reflect.TypeOf(&SEmpty{}).String()] = &SEmpty{}
+	mapping[reflect.TypeOf(&STypeScript{}).String()] = &STypeScript{}
+	mapping[reflect.TypeOf(&SExportClause{}).String()] = &SExportClause{}
+	mapping[reflect.TypeOf(&SExportFrom{}).String()] = &SExportFrom{}
+	mapping[reflect.TypeOf(&SExportDefault{}).String()] = &SExportDefault{}
+	mapping[reflect.TypeOf(&SExportStar{}).String()] = &SExportStar{}
+	mapping[reflect.TypeOf(&SExportEquals{}).String()] = &SExportEquals{}
+	mapping[reflect.TypeOf(&SLazyExport{}).String()] = &SLazyExport{}
+	mapping[reflect.TypeOf(&SExpr{}).String()] = &SExpr{}
+	mapping[reflect.TypeOf(&SEnum{}).String()] = &SEnum{}
+	mapping[reflect.TypeOf(&SNamespace{}).String()] = &SNamespace{}
+	mapping[reflect.TypeOf(&SFunction{}).String()] = &SFunction{}
+	mapping[reflect.TypeOf(&SClass{}).String()] = &SClass{}
+	mapping[reflect.TypeOf(&SLabel{}).String()] = &SLabel{}
+	mapping[reflect.TypeOf(&SIf{}).String()] = &SIf{}
+	mapping[reflect.TypeOf(&SFor{}).String()] = &SFor{}
+	mapping[reflect.TypeOf(&SForIn{}).String()] = &SForIn{}
+	mapping[reflect.TypeOf(&SForOf{}).String()] = &SForOf{}
+	mapping[reflect.TypeOf(&SDoWhile{}).String()] = &SDoWhile{}
+	mapping[reflect.TypeOf(&SWhile{}).String()] = &SWhile{}
+	mapping[reflect.TypeOf(&SWith{}).String()] = &SWith{}
+	mapping[reflect.TypeOf(&STry{}).String()] = &STry{}
+	mapping[reflect.TypeOf(&SSwitch{}).String()] = &SSwitch{}
+	mapping[reflect.TypeOf(&SImport{}).String()] = &SImport{}
+	mapping[reflect.TypeOf(&SReturn{}).String()] = &SReturn{}
+	mapping[reflect.TypeOf(&SThrow{}).String()] = &SThrow{}
+	mapping[reflect.TypeOf(&SLocal{}).String()] = &SLocal{}
+	mapping[reflect.TypeOf(&SBreak{}).String()] = &SBreak{}
+	mapping[reflect.TypeOf(&SContinue{}).String()] = &SContinue{}
+
+	// **************************************************************** //
+	bindingMapping = make(map[string]B)
+	bindingMapping[reflect.TypeOf(&BMissing{}).String()] = &BMissing{}
+	bindingMapping[reflect.TypeOf(&BIdentifier{}).String()] = &BIdentifier{}
+	bindingMapping[reflect.TypeOf(&BArray{}).String()] = &BArray{}
+	bindingMapping[reflect.TypeOf(&BObject{}).String()] = &BObject{}
+
+	// **************************************************************** //
+	exprMapping = make(map[string]E)
+	exprMapping[reflect.TypeOf(&ENew{}).String()] = &ENew{}
+	exprMapping[reflect.TypeOf(&EArray{}).String()] = &EArray{}
+	exprMapping[reflect.TypeOf(&EUnary{}).String()] = &EUnary{}
+	exprMapping[reflect.TypeOf(&EBinary{}).String()] = &EBinary{}
+	exprMapping[reflect.TypeOf(&EBoolean{}).String()] = &EBoolean{}
+	exprMapping[reflect.TypeOf(&ESuper{}).String()] = &ESuper{}
+	exprMapping[reflect.TypeOf(&ENull{}).String()] = &ENull{}
+	exprMapping[reflect.TypeOf(&EUndefined{}).String()] = &EUndefined{}
+	exprMapping[reflect.TypeOf(&EThis{}).String()] = &EThis{}
+	exprMapping[reflect.TypeOf(&ENewTarget{}).String()] = &ENewTarget{}
+	exprMapping[reflect.TypeOf(&EImportMeta{}).String()] = &EImportMeta{}
+	exprMapping[reflect.TypeOf(&ECall{}).String()] = &ECall{}
+	exprMapping[reflect.TypeOf(&EDot{}).String()] = &EDot{}
+	exprMapping[reflect.TypeOf(&EIndex{}).String()] = &EIndex{}
+	exprMapping[reflect.TypeOf(&EArrow{}).String()] = &EArrow{}
+	exprMapping[reflect.TypeOf(&EFunction{}).String()] = &EFunction{}
+	exprMapping[reflect.TypeOf(&EClass{}).String()] = &EClass{}
+	exprMapping[reflect.TypeOf(&EIdentifier{}).String()] = &EIdentifier{}
+	exprMapping[reflect.TypeOf(&EImportIdentifier{}).String()] = &EImportIdentifier{}
+	exprMapping[reflect.TypeOf(&EPrivateIdentifier{}).String()] = &EPrivateIdentifier{}
+	exprMapping[reflect.TypeOf(&ENameOfSymbol{}).String()] = &ENameOfSymbol{}
+	exprMapping[reflect.TypeOf(&EJSXElement{}).String()] = &EJSXElement{}
+	exprMapping[reflect.TypeOf(&EJSXText{}).String()] = &EJSXText{}
+	exprMapping[reflect.TypeOf(&EMissing{}).String()] = &EMissing{}
+	exprMapping[reflect.TypeOf(&ENumber{}).String()] = &ENumber{}
+	exprMapping[reflect.TypeOf(&EBigInt{}).String()] = &EBigInt{}
+	exprMapping[reflect.TypeOf(&EObject{}).String()] = &EObject{}
+	exprMapping[reflect.TypeOf(&ESpread{}).String()] = &ESpread{}
+	exprMapping[reflect.TypeOf(&EString{}).String()] = &EString{}
+	exprMapping[reflect.TypeOf(&ETemplate{}).String()] = &ETemplate{}
+	exprMapping[reflect.TypeOf(&ERegExp{}).String()] = &ERegExp{}
+	exprMapping[reflect.TypeOf(&EInlinedEnum{}).String()] = &EInlinedEnum{}
+	exprMapping[reflect.TypeOf(&EAnnotation{}).String()] = &EAnnotation{}
+	exprMapping[reflect.TypeOf(&EAwait{}).String()] = &EAwait{}
+	exprMapping[reflect.TypeOf(&EYield{}).String()] = &EYield{}
+	exprMapping[reflect.TypeOf(&EIf{}).String()] = &EIf{}
+	exprMapping[reflect.TypeOf(&ERequireString{}).String()] = &ERequireString{}
+	exprMapping[reflect.TypeOf(&ERequireResolveString{}).String()] = &ERequireResolveString{}
+	exprMapping[reflect.TypeOf(&EImportString{}).String()] = &EImportString{}
+	exprMapping[reflect.TypeOf(&EImportCall{}).String()] = &EImportCall{}
+}
+
+func (s Stmt) MarshalJSON() ([]byte, error) {
+	// TODO: check for recursive statements (e.g. SBlock)
+	// concreteType := reflect.TypeOf(s.Data).String() // same as using fmt. %T
+	var concreteType string
+	if s.Data == nil {
+		concreteType = ""
+	} else {
+		concreteType = reflect.TypeOf(s.Data).String() // same as using fmt. %T
+	}
+
+	// typeName := fmt.Sprintf("%T", s.Data)
+
+	val, err := json.Marshal(&struct {
+		TypeName string
+		Loc      logger.Loc
+		Data     S
+	}{
+		TypeName: concreteType,
+		Loc:      s.Loc,
+		Data:     s.Data,
+	})
+	if err != nil {
+		fmt.Println("Error marshaling stmt with name", err)
+		panic(err)
+		return []byte{}, err
+	}
+	return val, nil
+}
+
+func (s *Stmt) UnmarshalJSON(data []byte) error {
+	// TODO: check for recursive statements
+	raw := RawStmt{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err)
+		panic(err)
+		return err
+	}
+	if raw.TypeName == "" {
+		s.Data = nil
+		s.Loc = raw.Loc
+		return nil
+	}
+	typePointer := mapping[raw.TypeName]
+	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(S)
+	err2 := json.Unmarshal(raw.Data, &val)
+	if err2 != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err2)
+		return err2
+	}
+	s.Data = val
+	s.Loc = raw.Loc
+	return nil
+}
+
 // This interface is never called. Its purpose is to encode a variant type in
 // Go's type system.
 type S interface{ isStmt() }
@@ -1278,6 +1575,155 @@ type Scope struct {
 	Kind       ScopeKind
 }
 
+type SerialiezdScope struct {
+	Name                    string
+	TSNamespace             *TSNamespaceScope
+	Members                 map[string]ScopeMember
+	Replaced                []ScopeMember
+	Generated               []ast.Ref
+	UseStrictLoc            logger.Loc
+	Label                   ast.LocRef
+	LabelStmtIsLoop         bool
+	ContainsDirectEval      bool
+	ForbidArguments         bool
+	IsAfterConstLocalPrefix bool
+	StrictMode              StrictModeKind
+	Kind                    ScopeKind
+
+	// for json serilization
+	Parent   string
+	Children []string
+}
+
+func getNameByScope(scope *Scope) string {
+	scopeName, ok := scopeNames[scope]
+	if ok {
+		return scopeName
+	}
+
+	if scope == nil {
+		scopeNames[scope] = ""
+		return ""
+	}
+	name := fmt.Sprintf("%x", &scope)
+	scopeNames[scope] = name
+	return fmt.Sprintf("%x", &scope)
+}
+
+func ScopeFromSerialized(data SerialiezdScope) *Scope {
+	s := &Scope{
+		TSNamespace:             data.TSNamespace,
+		Members:                 data.Members,
+		Replaced:                data.Replaced,
+		Generated:               data.Generated,
+		UseStrictLoc:            data.UseStrictLoc,
+		Label:                   data.Label,
+		LabelStmtIsLoop:         data.LabelStmtIsLoop,
+		ContainsDirectEval:      data.ContainsDirectEval,
+		ForbidArguments:         data.ForbidArguments,
+		IsAfterConstLocalPrefix: data.IsAfterConstLocalPrefix,
+		StrictMode:              data.StrictMode,
+		Kind:                    data.Kind,
+
+		Parent:   nil,
+		Children: make([]*Scope, len(data.Children)),
+	}
+	// for _, child := range data.Children {
+	// 	s.Children = append(s.Children, &Scope{})
+	// }
+	return s
+}
+
+// DFS on scopes
+func flattenScope(root *Scope, flatScopes []SerialiezdScope) []SerialiezdScope {
+	parentName := ""
+	if root.Parent != nil {
+		parentName = getNameByScope(root.Parent)
+	}
+	result := SerialiezdScope{
+		Name:                    getNameByScope(root),
+		TSNamespace:             root.TSNamespace,
+		Members:                 root.Members,
+		Replaced:                root.Replaced,
+		Generated:               root.Generated,
+		UseStrictLoc:            root.UseStrictLoc,
+		Label:                   root.Label,
+		LabelStmtIsLoop:         root.LabelStmtIsLoop,
+		ContainsDirectEval:      root.ContainsDirectEval,
+		ForbidArguments:         root.ForbidArguments,
+		IsAfterConstLocalPrefix: root.IsAfterConstLocalPrefix,
+		StrictMode:              root.StrictMode,
+		Kind:                    root.Kind,
+
+		Parent:   parentName,
+		Children: make([]string, len(root.Children)),
+	}
+
+	flatScopes = append(flatScopes, result)
+
+	for i, child := range root.Children {
+		result.Children[i] = getNameByScope(child)
+		flatScopes = flattenScope(child, flatScopes)
+	}
+
+	return flatScopes
+}
+
+func (s *Scope) MarshalJSON() ([]byte, error) {
+	var scopes []SerialiezdScope
+	flat := flattenScope(s, scopes)
+	return json.Marshal(flat)
+}
+
+func createScopeTreeFromSerialized(data []SerialiezdScope) *Scope {
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Create a map of scoeps
+	// {scopeName1-> scope1}
+	// {scopeName2 -> scope2}
+	scopesMap := make(map[string]*Scope)
+	for _, serialized := range data {
+		scope := ScopeFromSerialized(serialized)
+		scopesMap[serialized.Name] = scope
+	}
+
+	var root *Scope
+	for _, serialized := range data {
+		parent, parentExists := scopesMap[serialized.Parent]
+		if !parentExists {
+			// you are the root
+			root = scopesMap[serialized.Name]
+		} else {
+			child := scopesMap[serialized.Name]
+			child.Parent = parent
+			parent.Children = append(parent.Children, child)
+		}
+	}
+
+	return root
+}
+
+func (s *Scope) UnmarshalJSON(data []byte) error {
+	var scopes []SerialiezdScope
+	err := json.Unmarshal(data, &scopes)
+	if len(scopes) == 0 {
+		s = nil
+		return nil
+	}
+	scope := createScopeTreeFromSerialized(scopes)
+	if scope == nil {
+		s = nil
+		return nil
+	}
+	*s = *createScopeTreeFromSerialized(scopes)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type StrictModeKind uint8
 
 const (
@@ -1412,6 +1858,71 @@ type TSNamespaceMemberData interface {
 	isTSNamespaceMember()
 }
 
+var nsMembers map[string]TSNamespaceMemberData
+
+func (e TSNamespaceMember) MarshalJSON() ([]byte, error) {
+	concreteType := ""
+	if e.Data != nil {
+		concreteType = reflect.TypeOf(e.Data).String() // same as using fmt. %T
+	}
+
+	// typeName := fmt.Sprintf("%T", s.Data)
+
+	val, err := json.Marshal(&struct {
+		TypeName    string
+		Loc         logger.Loc
+		Data        TSNamespaceMemberData
+		IsEnumValue bool
+	}{
+		TypeName:    concreteType,
+		Loc:         e.Loc,
+		Data:        e.Data,
+		IsEnumValue: e.IsEnumValue,
+	})
+	if err != nil {
+		fmt.Println("Error marshaling TSNamespaceMember with name", err)
+		panic(err)
+	}
+	return val, nil
+}
+
+type RawTNamespace struct {
+	Data        json.RawMessage // delay parsing until we type to create
+	Loc         logger.Loc
+	IsEnumValue bool
+	TypeName    string
+}
+
+func (e *TSNamespaceMember) UnmarshalJSON(data []byte) error {
+	// TODO: check for recursive statements
+	raw := RawTNamespace{}
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		fmt.Println("Error Unmarshalling TSNamespaceMember with name", err)
+		panic(err)
+	}
+	if raw.TypeName == "" {
+		// fmt.Println("Expression with no type (no data field) unmarshaled.")
+		e.Data = nil
+		e.Loc = raw.Loc
+		e.IsEnumValue = false
+		return nil
+	}
+
+	typePointer := nsMembers[raw.TypeName]
+	val := reflect.New(reflect.TypeOf(typePointer).Elem()).Interface().(TSNamespaceMemberData)
+	err2 := json.Unmarshal(raw.Data, &val)
+	if err2 != nil {
+		fmt.Println("Error Unmarshalling stmt with name", err2)
+		panic(err2)
+	}
+	e.Data = val
+	e.Loc = raw.Loc
+	e.IsEnumValue = raw.IsEnumValue
+
+	return nil
+}
+
 func (TSNamespaceMemberProperty) isTSNamespaceMember()   {}
 func (TSNamespaceMemberNamespace) isTSNamespaceMember()  {}
 func (TSNamespaceMemberEnumNumber) isTSNamespaceMember() {}
@@ -1499,12 +2010,85 @@ type ModuleTypeData struct {
 	Type   ModuleType
 }
 
+func (moduleDataType ModuleTypeData) ToString() string {
+	src := moduleDataType.Source.ToString()
+	rangeStr := moduleDataType.Range.ToString()
+	moduleType := moduleDataType.Type
+	return fmt.Sprintf("source: %s range: %s type: %d", src, rangeStr, moduleType)
+}
+
+func ModuleDataTypeFromString(moduleDataTypeStr string) (ModuleTypeData, error) {
+	retModuleDataType := ModuleTypeData{}
+	var srcStr string
+	var rngStr string
+	_, err := fmt.Sscanf(moduleDataTypeStr, "source: %s range: %s type: %d", &srcStr, &rngStr, &retModuleDataType.Type)
+	if err != nil {
+		return retModuleDataType, err
+	}
+	scannedSource, err := retModuleDataType.Source.SourceFromString(srcStr)
+	if err != nil {
+		return retModuleDataType, err
+	}
+	scannedRange, err := logger.RangeFromString(rngStr)
+	if err != nil {
+		return retModuleDataType, err
+	}
+	retModuleDataType.Range = scannedRange
+	retModuleDataType.Source = &scannedSource
+	return retModuleDataType, nil
+}
+
 // This is the index to the automatically-generated part containing code that
 // calls "__export(exports, { ... getters ... })". This is used to generate
 // getters on an exports object for ES6 export statements, and is both for
 // ES6 star imports and CommonJS-style modules. All files have one of these,
 // although it may contain no statements if there is nothing to export.
 const NSExportPartIndex = uint32(0)
+
+type SerializedAST struct {
+	// NOT REALLY IMPLEMENTED YET
+
+	// TODO: Check this parts when there is recursion (parent scope/children scope)
+	Parts       []SerialiezdPart
+	ModuleScope *Scope
+
+	// no custom logic for this
+	Symbols            []ast.Symbol
+	ManifestForYarnPnP Expr
+	CharFreq           *ast.CharFreq
+
+	// END OF NOT REALLY IMPLEMENTED YET
+
+	ExprComments                    map[string][]string
+	TopLevelSymbolToPartsFromParser map[string][]uint32
+	TSEnums                         map[string]map[string]string
+	ModuleTypeData                  ModuleTypeData
+	// Add more fields with custom string functionality here
+	ConstValues              map[string]string
+	MangledProps             map[string]string
+	ReservedProps            map[string]bool
+	ImportRecords            []string
+	NamedImports             map[string]string
+	NamedExports             map[string]string
+	ExportStarImportRecords  []uint32
+	SourceMapComment         string
+	ExportKeyword            string
+	TopLevelAwaitKeyword     string
+	LiveTopLevelAwaitKeyword string
+	ExportsRef               string
+	ModuleRef                string
+	WrapperRef               string
+	ApproximateLineCount     int32
+	NestedScopeSlotCounts    ast.SlotCounts
+	HasLazyExport            bool
+	UsesExportsRef           bool
+	UsesModuleRef            bool
+	ExportsKind              ExportsKind
+
+	Hashbang   string
+	Directives []string
+	URLForCSS  string
+}
 
 type AST struct {
 	ModuleTypeData ModuleTypeData
@@ -1580,9 +2164,297 @@ type AST struct {
 	ExportsKind    ExportsKind
 }
 
+func (serialized *SerializedAST) DeserializeFromJson() (AST, error) {
+	var err error
+	var a AST
+	a.ExprComments = make(map[logger.Loc][]string)
+	for locStr, comments := range serialized.ExprComments {
+		loc, err := logger.LocFromString(locStr)
+		if err != nil {
+			return a, err
+		}
+		a.ExprComments[*loc] = comments
+	}
+	a.ModuleScope = serialized.ModuleScope
+	a.Symbols = serialized.Symbols
+	a.CharFreq = serialized.CharFreq
+	a.TopLevelSymbolToPartsFromParser = make(map[ast.Ref][]uint32)
+	for refStr, parts := range serialized.TopLevelSymbolToPartsFromParser {
+		var ref ast.Ref
+		ref = ref.FromString(refStr)
+		a.TopLevelSymbolToPartsFromParser[ref] = parts
+	}
+	// a.ModuleTypeData, err = ModuleDataTypeFromString(serialized.ModuleTypeData)
+	a.ModuleTypeData = serialized.ModuleTypeData
+	if err != nil {
+		return a, err
+	}
+
+	a.TSEnums = make(map[ast.Ref]map[string]TSEnumValue)
+	for refStr, enumsMap := range serialized.TSEnums {
+		var ref ast.Ref
+		ref = ref.FromString(refStr)
+
+		for enumStr, enum := range enumsMap {
+			if a.TSEnums[ref] == nil {
+				a.TSEnums[ref] = make(map[string]TSEnumValue)
+			}
+			a.TSEnums[ref][enumStr] = EnumValFromString(enum)
+			if err != nil {
+				return a, err
+			}
+		}
+	}
+
+	a.ConstValues = make(map[ast.Ref]ConstValue)
+	for refStr, valueStr := range serialized.ConstValues {
+		var ref ast.Ref
+		var constVal ConstValue
+		ref = ref.FromString(refStr)
+		constVal, err = constVal.FromString(valueStr)
+		if err != nil {
+			return a, err
+		}
+		a.ConstValues[ref] = constVal
+	}
+
+	a.ReservedProps = serialized.ReservedProps
+	a.ImportRecords = make([]ast.ImportRecord, len(serialized.ImportRecords))
+	var impRecord ast.ImportRecord
+	for i, recordStr := range serialized.ImportRecords {
+		importRecord, err := impRecord.FromString(recordStr)
+		if err != nil {
+			return a, err
+		}
+		a.ImportRecords[i] = *importRecord
+	}
+
+	a.NamedImports = make(map[ast.Ref]NamedImport)
+	for refStr, namedImportStr := range serialized.NamedImports {
+		var ref ast.Ref
+		var named NamedImport
+		ref = ref.FromString(refStr)
+		named, err = named.FromString(namedImportStr)
+		if err != nil {
+			return a, err
+		}
+		a.NamedImports[ref] = named
+	}
+
+	a.NamedExports = make(map[string]NamedExport)
+	var named NamedExport
+	for key, namedExportStr := range serialized.NamedExports {
+		export, err := named.FromString(namedExportStr)
+		if err != nil {
+			return a, err
+		}
+		a.NamedExports[key] = *export
+	}
+
+	var ref ast.Ref
+	a.ExportStarImportRecords = serialized.ExportStarImportRecords
+
+	if a.SourceMapComment, err = logger.SpanFromString(serialized.SourceMapComment); err != nil {
+		return a, err
+	}
+	if a.ExportKeyword, err = logger.RangeFromString(serialized.ExportKeyword); err != nil {
+		return a, err
+	}
+	if a.TopLevelAwaitKeyword, err = logger.RangeFromString(serialized.TopLevelAwaitKeyword); err != nil {
+		return a, err
+	}
+	if a.LiveTopLevelAwaitKeyword, err = logger.RangeFromString(serialized.LiveTopLevelAwaitKeyword); err != nil {
+		return a, err
+	}
+
+	a.ExportsRef = ref.FromString(serialized.ExportsRef)
+	a.ModuleRef = ref.FromString(serialized.ModuleRef)
+	a.WrapperRef = ref.FromString(serialized.WrapperRef)
+	a.ApproximateLineCount = serialized.ApproximateLineCount
+	a.NestedScopeSlotCounts = serialized.NestedScopeSlotCounts
+	a.HasLazyExport = serialized.HasLazyExport
+	a.UsesExportsRef = serialized.UsesExportsRef
+	a.UsesModuleRef = serialized.UsesModuleRef
+	a.ExportsKind = serialized.ExportsKind
+	a.Hashbang = serialized.Hashbang
+	a.Directives = serialized.Directives
+	a.URLForCSS = serialized.URLForCSS
+	a.Parts = make([]Part, len(serialized.Parts))
+	for i, part := range serialized.Parts {
+		a.Parts[i] = DeserializePart(part)
+		if err != nil {
+			return a, err
+		}
+	}
+	return a, nil
+}
+
+func (a AST) SerializeForJson() *SerializedAST {
+	return &SerializedAST{
+		ExprComments: func() map[string][]string {
+			result := make(map[string][]string)
+			for loc, comments := range a.ExprComments {
+				result[loc.ToString()] = comments
+			}
+			return result
+		}(),
+		Parts: func() []SerialiezdPart {
+			var acc []SerialiezdPart
+			for _, part := range a.Parts {
+				acc = append(acc, SerializePart(part))
+			}
+			return acc
+		}(),
+		ModuleScope: a.ModuleScope,
+		TopLevelSymbolToPartsFromParser: func() map[string][]uint32 {
+			result := make(map[string][]uint32)
+			for ref, parts := range a.TopLevelSymbolToPartsFromParser {
+				result[ref.ToString()] = parts
+			}
+			return result
+		}(),
+		CharFreq: a.CharFreq,
+		TSEnums: func() map[string]map[string]string {
+			result := make(map[string]map[string]string)
+			for ref, enumsMap := range a.TSEnums {
+				//TSEnums map[ast.Ref]map[string]TSEnumValue
+				refStr := ref.ToString()
+				for enumKey, enum := range enumsMap {
+					if result[refStr] == nil {
+						result[refStr] = make(map[string]string)
+					}
+					result[refStr][enumKey] = EnumValToString(enum)
+				}
+			}
+			return result
+		}(),
+		ConstValues: func() map[string]string {
+			result := make(map[string]string)
+			for ref, value := range a.ConstValues {
+				result[ref.ToString()] = value.ToString()
+			}
+			return result
+		}(),
+		ModuleTypeData: a.ModuleTypeData,
+		ReservedProps:  a.ReservedProps,
+		ImportRecords: func() []string {
+			var acc []string
+			for _, record := range a.ImportRecords {
+				acc = append(acc, record.ToString())
+			}
+			return acc
+		}(),
+		NamedImports: func() map[string]string {
+			result := make(map[string]string)
+			for ref, namedImport := range a.NamedImports {
+				result[ref.ToString()] = namedImport.ToString()
+			}
+			return result
+		}(),
+		NamedExports: func() map[string]string {
+			result := make(map[string]string)
+			for ref, namedExport := range a.NamedExports {
+				result[ref] = namedExport.ToString()
+			}
+			return result
+		}(),
+		Symbols:                  a.Symbols,
+		ExportStarImportRecords:  a.ExportStarImportRecords,
+		SourceMapComment:         a.SourceMapComment.ToString(),
+		ExportKeyword:            a.ExportKeyword.ToString(),
+		TopLevelAwaitKeyword:     a.TopLevelAwaitKeyword.ToString(),
+		LiveTopLevelAwaitKeyword: a.LiveTopLevelAwaitKeyword.ToString(),
+		ExportsRef:               a.ExportsRef.ToString(),
+		ModuleRef:                a.ModuleRef.ToString(),
+		WrapperRef:               a.WrapperRef.ToString(),
+		ApproximateLineCount:     a.ApproximateLineCount,
+		NestedScopeSlotCounts:    a.NestedScopeSlotCounts,
+		HasLazyExport:            a.HasLazyExport,
+		UsesExportsRef:           a.UsesExportsRef,
+		UsesModuleRef:            a.UsesModuleRef,
+		ExportsKind:              a.ExportsKind,
+		Hashbang:                 a.Hashbang,
+		Directives:               a.Directives,
+		URLForCSS:                a.URLForCSS,
+	}
+}
+
+func (a AST) MarshalJSON() ([]byte, error) {
+	return json.Marshal(a.SerializeForJson())
+}
+
 type TSEnumValue struct {
 	String []uint16 // Use this if it's not nil
 	Number float64  // Use this if "String" is nil
+}
+
+func EnumValToString(tsEnum TSEnumValue) string {
+	return fmt.Sprintf("String: %v, Number: %v", tsEnum.String, tsEnum.Number)
+}
+
+func ParseEnumValFromString(str string) (*TSEnumValue, error) {
+	// Split the string into parts
+	parts := strings.Split(str, ", ")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid EnumVal string format")
+	}
+
+	var tsEnum TSEnumValue
+
+	// Parse the string part
+	stringPart := strings.Split(parts[0], ": ")
+	if len(stringPart) != 2 {
+		return nil, fmt.Errorf("invalid string part format")
+	}
+	if stringPart[1] != "nil" {
+		// If it's not nil, parse the slice of uint16
+		var strSlice []uint16
+		strPart := stringPart[1][1 : len(stringPart[1])-1] // Remove brackets
+		if strPart != "" {
+			strValues := strings.Split(strPart, " ")
+			for _, value := range strValues {
+				intValue, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, err
+				}
+				strSlice = append(strSlice, uint16(intValue))
+			}
+		}
+		tsEnum.String = strSlice
+	}
+
+	// Parse the number part
+	numberPart := strings.Split(parts[1], ": ")
+	if len(numberPart) != 2 {
+		return nil, fmt.Errorf("invalid number part format")
+	}
+	num, err := strconv.ParseFloat(numberPart[1], 64)
+	if err != nil {
+		return nil, err
+	}
+	tsEnum.Number = num
+
+	return &tsEnum, nil
+}
+
+func EnumValFromString(tsEnumStr string) TSEnumValue {
+	// tsEnum := TSEnumValue{}
+	tsEnum, err := ParseEnumValFromString(tsEnumStr)
+	if err != nil {
+		fmt.Println("tsEnumStr", tsEnumStr)
+		fmt.Println("Error parsing TSEnumValue:", err)
+	}
+	return *tsEnum
+	// var str []uint16
+	// var num float64
+	// _, err := fmt.Sscanf(tsEnumStr, "String: %v, Number: %v", &str, &num)
+	// if err != nil {
+	// 	fmt.Println("tsEnumStr", tsEnumStr)
+	// 	fmt.Println("Error parsing TSEnumValue:", err)
+	// }
+	// tsEnum.String = str
+	// tsEnum.Number = num
+	// return tsEnum
 }
 
 type ConstValueKind uint8
@@ -1599,6 +2471,15 @@ const (
 type ConstValue struct {
 	Number float64 // Use this for "ConstValueNumber"
 	Kind   ConstValueKind
+}
+
+func (c ConstValue) ToString() string {
+	return fmt.Sprintf("Number: %v Kind: %v", c.Number, c.Kind)
+}
+
+func (c ConstValue) FromString(formattedStr string) (ConstValue, error) {
+	fmt.Sscanf(formattedStr, "Number: %v Kind: %v", c.Number, c.Kind)
+	return c, nil
 }
 
 func ExprToConstValue(expr Expr) ConstValue {
@@ -1678,11 +2559,119 @@ type NamedImport struct {
 	IsExported bool
 }
 
+func uintArrToString(arr []uint32) string {
+	if len(arr) == 0 {
+		return "nil"
+	}
+	var str string
+	for _, val := range arr {
+		str += fmt.Sprintf("%v ", val)
+	}
+	return str
+}
+
+func stringToUintArr(str string) []uint32 {
+	if str == "nil" {
+		return make([]uint32, 0)
+	}
+	var arr []uint32
+	_, err := fmt.Sscanf(str, "%v", &arr)
+	if err != nil {
+		fmt.Println("Error parsing uint32 array:", err)
+	}
+	return arr
+
+}
+
+var namedImportFormat = "Alias: %s LocalPartsWithUses: %s AliasLoc: %v NamespaceRef: %v ImportRecordIndex: %v AliasIsStar: %v IsExported: %v"
+
+func (n NamedImport) ToString() string {
+	if n.Alias == "" {
+		n.Alias = "nil"
+	}
+	return fmt.Sprintf(namedImportFormat, n.Alias, uintArrToString(n.LocalPartsWithUses), n.AliasLoc.ToString(), n.NamespaceRef.ToString(), n.ImportRecordIndex, n.AliasIsStar, n.IsExported)
+}
+
+func (n NamedImport) FromString(importFormattedString string) (NamedImport, error) {
+	// Variables for NamedImport
+	var (
+		Alias                 string
+		LocalPartsWithUsesStr string
+		AliasLocStr           string
+		NamespaceRefStr       string
+		ImportRecordIndex     uint32
+		AliasIsStar           bool
+		IsExported            bool
+	)
+
+	// LocalPartsWithUses = stringToUintArr(importFormattedString)
+
+	// Parse NamedImport string
+	_, err := fmt.Sscanf(importFormattedString,
+		namedImportFormat,
+		&Alias, &LocalPartsWithUsesStr, &AliasLocStr, &NamespaceRefStr, &ImportRecordIndex, &AliasIsStar, &IsExported)
+
+	if err != nil {
+		fmt.Println("Error parsing NamedImport:", err)
+		return NamedImport{}, err
+	}
+	if Alias == "nil" {
+		Alias = ""
+	}
+
+	LocalPartsWithUses := stringToUintArr(LocalPartsWithUsesStr)
+
+	// Parse AliasLoc
+	AliasLoc, err := logger.LocFromString(AliasLocStr)
+
+	if err != nil {
+		fmt.Println("Error parsing AliasLoc:", err)
+		return NamedImport{}, err
+	}
+
+	ref := ast.Ref{}
+	NamespaceRef := ref.FromString(NamespaceRefStr)
+
+	return NamedImport{
+		Alias:              Alias,
+		LocalPartsWithUses: LocalPartsWithUses,
+		AliasLoc:           *AliasLoc,
+		NamespaceRef:       NamespaceRef,
+		ImportRecordIndex:  ImportRecordIndex,
+		AliasIsStar:        AliasIsStar,
+		IsExported:         IsExported,
+	}, nil
+}
+
 type NamedExport struct {
 	Ref      ast.Ref
 	AliasLoc logger.Loc
 }
 
+func (n NamedExport) ToString() string {
+	return fmt.Sprintf("Ref: %s AliasLoc: %s", n.Ref.ToString(), n.AliasLoc.ToString())
+}
+func (n NamedExport) FromString(formattedStr string) (*NamedExport, error) {
+	var (
+		refString      string
+		aliasLocString string
+	)
+
+	fmt.Sscanf(formattedStr, "Ref: %s AliasLoc: %s", &refString, &aliasLocString)
+	ref := ast.Ref{}
+	ref = ref.FromString(refString)
+	aliasLoc, err := logger.LocFromString(aliasLocString)
+	if err != nil {
+		fmt.Println("Error parsing AliasLoc:", err)
+		return nil, err
+	}
+	return &NamedExport{
+		Ref:      ref,
+		AliasLoc: *aliasLoc,
+	}, nil
+}
+
+// TODO: SERIALIZE DIS
 // Each file is made up of multiple parts, and each part consists of one or
 // more top-level statements. Parts are used for tree shaking and code
 // splitting analysis. Individual parts of a file can be discarded by tree
@@ -1732,6 +2721,103 @@ type Part struct {
 	// This is true if this file has been marked as live by the tree shaking
 	// algorithm.
 	IsLive bool
+}
+type SerialiezdPart struct {
+	Stmts                    []Stmt
+	Scopes                   []*Scope
+	ImportRecordIndices      []uint32
+	DeclaredSymbols          []DeclaredSymbol
+	SymbolUses               map[string]SymbolUse
+	SymbolCallUses           map[string]SymbolCallUse
+	ImportSymbolPropertyUses map[string]map[string]SymbolUse
+	Dependencies             []Dependency
+
+	CanBeRemovedIfUnused bool
+	ForceTreeShaking     bool
+	IsLive               bool
+}
+
+func DeserializePart(serializedPart SerialiezdPart) Part {
+	SymbolUses := make(map[ast.Ref]SymbolUse)
+	SymbolCallUses := make(map[ast.Ref]SymbolCallUse)
+	ImportSymbolPropertyUses := make(map[ast.Ref]map[string]SymbolUse)
+	for key, value := range serializedPart.SymbolUses {
+		var ref ast.Ref
+		// TODO: maybe cast value here if it will desrialize directly to SymbolUse
+		SymbolUses[ref.FromString(key)] = value
+	}
+	for key, value := range serializedPart.SymbolCallUses {
+		var ref ast.Ref
+		// TODO: maybe cast value here if it will desrialize directly to SymbolUse
+		SymbolCallUses[ref.FromString(key)] = value
+	}
+	for key, value := range serializedPart.ImportSymbolPropertyUses {
+		var ref ast.Ref
+		innerMap := make(map[string]SymbolUse)
+		for innerKey, innerValue := range value {
+			innerMap[innerKey] = innerValue // SymbolUse{CountEstimate: innerValue}
+		}
+		ImportSymbolPropertyUses[ref.FromString(key)] = innerMap
+	}
+	return Part{
+		Stmts:                    serializedPart.Stmts,
+		Scopes:                   serializedPart.Scopes,
+		ImportRecordIndices:      serializedPart.ImportRecordIndices,
+		DeclaredSymbols:          serializedPart.DeclaredSymbols,
+		SymbolUses:               SymbolUses,
+		SymbolCallUses:           SymbolCallUses,
+		ImportSymbolPropertyUses: ImportSymbolPropertyUses,
+
+		Dependencies:         serializedPart.Dependencies,
+		CanBeRemovedIfUnused: serializedPart.CanBeRemovedIfUnused,
+		ForceTreeShaking:     serializedPart.ForceTreeShaking,
+		IsLive:               serializedPart.IsLive,
+	}
+}
+
+func SerializePart(part Part) SerialiezdPart {
+	symbolCallUseInterfaceMap := make(map[string]SymbolCallUse)
+
+	for key, value := range part.SymbolCallUses {
+		// TODO: maybe cast value here if it will desrialize directly to SymbolUse
+		symbolCallUseInterfaceMap[key.ToString()] = value
+	}
+
+	return SerialiezdPart{
+		Stmts:                    part.Stmts,
+		Scopes:                   part.Scopes,
+		ImportRecordIndices:      part.ImportRecordIndices,
+		DeclaredSymbols:          part.DeclaredSymbols,
+		SymbolUses:               convertRefMapToStringMap(part.SymbolUses),
+		SymbolCallUses:           symbolCallUseInterfaceMap,
+		ImportSymbolPropertyUses: convertRefMapOfMapsToStringMapOfMaps(part.ImportSymbolPropertyUses),
+
+		Dependencies:         part.Dependencies,
+		CanBeRemovedIfUnused: part.CanBeRemovedIfUnused,
+		ForceTreeShaking:     part.ForceTreeShaking,
+		IsLive:               part.IsLive,
+	}
+}
+
+func convertRefMapToStringMap(inputMap map[ast.Ref]SymbolUse) map[string]SymbolUse {
+	resultMap := make(map[string]SymbolUse)
+	for key, value := range inputMap {
+		resultMap[key.ToString()] = value
+	}
+	return resultMap
+}
+
+// uint32 instead of SymbolUse
+func convertRefMapOfMapsToStringMapOfMaps(inputMap map[ast.Ref]map[string]SymbolUse) map[string]map[string]SymbolUse {
+	resultMap := make(map[string]map[string]SymbolUse)
+	for key, innerMap := range inputMap {
+		// resultInnerMap := make(map[string]uint32)
+		// for innerKey, innerValue := range innerMap {
+		// 	resultInnerMap[innerKey] = innerValue
+		// }
+		resultMap[key.ToString()] = innerMap
+	}
+	return resultMap
 }
 
 type Dependency struct {

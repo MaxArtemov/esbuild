@@ -29,3 +29,6 @@
 bin
 esbuild.exe
 node_modules/
+cache_jsons/*
+index_cache/*
+dist/*

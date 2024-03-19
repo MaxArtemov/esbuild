@@ -18,6 +18,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/evanw/esbuild/pkg/api"
 )
@@ -46,6 +47,7 @@ func Run(osArgs []string) int {
 //	result := api.Build(options)
 func ParseBuildOptions(osArgs []string) (options api.BuildOptions, err error) {
 	options = newBuildOptions()
+	fmt.Println("IN PARSE BUILD OPTIONS")
 	_, errWithNote := parseOptionsImpl(osArgs, &options, nil, kindExternal)
 	if errWithNote != nil {
 		err = errors.New(errWithNote.Text)

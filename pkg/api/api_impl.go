@@ -873,9 +873,13 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 	// Do not re-evaluate plugins when rebuilding. Also make sure the working
 	// directory doesn't change, since breaking that invariant would break the
 	// validation that we just did above.
-	caches := cache.MakeCacheSet()
+
+	// instead of creating cache here, we try to read it from disk and get it already initialized
+	// fmt.Println("Not creating cache in contextImpl, as it should e passed from outside")
+	// caches := cache.MakeCacheSet()
+
 	log := logger.NewDeferLog(logger.DeferLogNoVerboseOrDebug, logOptions.Overrides)
-	onEndCallbacks, onDisposeCallbacks, finalizeBuildOptions := loadPlugins(&buildOpts, realFS, log, caches)
+	onEndCallbacks, onDisposeCallbacks, finalizeBuildOptions := loadPlugins(&buildOpts, realFS, log, buildOpts.Caches)
 	options, entryPoints := validateBuildOptions(buildOpts, log, realFS)
 	finalizeBuildOptions(&options)
 	if buildOpts.AbsWorkingDir != absWorkingDir {
@@ -900,8 +904,32 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 		return nil, convertMessagesToPublic(logger.Error, msgs)
 	}
 
+	var timer *helpers.Timer
+	if api_helpers.UseTimer {
+		timer = &helpers.Timer{}
+	}
+
+	fmt.Println("buildOpts.CacheFromDisk", buildOpts.CacheFromDisk)
+	if buildOpts.CacheFromDisk {
+		timer.Begin("read-cache")
+		fmt.Println("Reading cache from disk")
+		cacheError, cacheSet := cache.GetCacheFromDisk()
+		if cacheError != nil {
+			fmt.Println("Error reading cache from disk", cacheError)
+		}
+		buildOpts.Caches = cacheSet
+		timer.End("read-cache")
+	} else {
+		fmt.Println("Make -cache set?")
+		timer.Begin("make-cache-set")
+		caches := cache.MakeCacheSet()
+		fmt.Println("Made cache set", caches)
+		buildOpts.Caches = caches
+		timer.End("make-cache-set")
+	}
+
 	args := rebuildArgs{
-		caches:             caches,
+		caches:             buildOpts.Caches,
 		onEndCallbacks:     onEndCallbacks,
 		onDisposeCallbacks: onDisposeCallbacks,
 		logOptions:         logOptions,
@@ -911,6 +939,7 @@ func contextImpl(buildOpts BuildOptions) (*internalContext, []Message) {
 		mangleCache:        buildOpts.MangleCache,
 		absWorkingDir:      absWorkingDir,
 		write:              buildOpts.Write,
+		timer:              timer,
 	}
 
 	return &internalContext{
@@ -1417,6 +1446,7 @@ type rebuildArgs struct {
 	mangleCache        map[string]interface{}
 	absWorkingDir      string
 	write              bool
+	timer              *helpers.Timer
 }
 
 type rebuildState struct {
@@ -1446,11 +1476,15 @@ func rebuildImpl(args rebuildArgs, oldHashes map[string]string) (rebuildState, m
 	var result BuildResult
 	var watchData fs.WatchData
 	var toWriteToStdout []byte
+	var timer = args.timer
+	// var timer *helpers.Timer
+	// if api_helpers.UseTimer {
+	// 	timer = &helpers.Timer{}
+	// }
 
-	var timer *helpers.Timer
-	if api_helpers.UseTimer {
-		timer = &helpers.Timer{}
-	}
+	// if args.options.DiskCache != nil {
+
+	// }
 
 	// Scan over the bundle
 	bundle := bundler.ScanBundle(config.BuildCall, log, realFS, args.caches, args.entryPoints, args.options, timer)
@@ -1618,6 +1652,7 @@ func rebuildImpl(args rebuildArgs, oldHashes map[string]string) (rebuildState, m
 
 	// Log timing information now that we're all done
 	timer.Log(log)
+	// TODO: here all of the timer is logged
 
 	// End the log after "OnEnd" callbacks have added any additional errors and/or
 	// warnings. This may may print any warnings that were deferred up until this
