@@ -96,6 +96,7 @@ type parseArgs struct {
 	importPathRange logger.Range
 	sourceIndex     uint32
 	skipResolve     bool
+	timer           *helpers.Timer
 }
 
 type parseResult struct {
@@ -120,6 +121,11 @@ type tlaCheck struct {
 }
 
 func parseFile(args parseArgs) {
+	timerLabel := "Parse file" + args.prettyPath
+	forked := args.timer.Fork()
+	forked.Begin(timerLabel)
+	defer args.timer.Join(forked)
+	defer forked.End(timerLabel)
 	source := logger.Source{
 		Index:          args.sourceIndex,
 		KeyPath:        args.keyPath,
@@ -175,6 +181,7 @@ func parseFile(args parseArgs) {
 	if loader == config.LoaderDefault {
 		loader = loaderFromFileExtension(args.options.ExtensionToLoader, base+ext)
 	}
+	fmt.Println("chosen loader:", loader)
 
 	if loader == config.LoaderEmpty {
 		source.Contents = ""
@@ -203,6 +210,7 @@ func parseFile(args parseArgs) {
 
 	switch loader {
 	case config.LoaderJS, config.LoaderEmpty:
+		fmt.Println("parsing js, maybe hit the cache")
 		ast, ok := args.caches.JSCache.Parse(args.log, source, js_parser.OptionsFromConfig(&args.options))
 		if len(ast.Parts) <= 1 { // Ignore the implicitly-generated namespace export part
 			result.file.inputFile.SideEffects.Kind = graph.NoSideEffects_EmptyAST
@@ -371,6 +379,7 @@ func parseFile(args parseArgs) {
 	if result.ok {
 		// Run the resolver on the parse thread so it's not run on the main thread.
 		// That way the main thread isn't blocked if the resolver takes a while.
+		fmt.Println("After parsing, running resolver, getting all import records")
 		if recordsPtr := result.file.inputFile.Repr.ImportRecords(); args.options.Mode == config.ModeBundle && !args.skipResolve && recordsPtr != nil {
 			// Clone the import records because they will be mutated later
 			records := append([]ast.ImportRecord{}, *recordsPtr...)
@@ -391,7 +400,7 @@ func parseFile(args parseArgs) {
 				}
 				resolverCache := make(map[cacheKey]cacheEntry)
 				tracker := logger.MakeLineColumnTracker(&source)
-
+				fmt.Println("make resolver cache")
 				for importRecordIndex := range records {
 					// Don't try to resolve imports that are already resolved
 					record := &records[importRecordIndex]
@@ -1393,13 +1402,20 @@ func (s *scanner) maybeParseFile(
 	kind inputKind,
 	inject chan config.InjectedFile,
 ) uint32 {
-	s.timer.Begin("Parse file" + prettyPath)
-	defer s.timer.End("Parse file" + prettyPath)
 	path := resolveResult.PathPair.Primary
 	visitedKey := path
 	if visitedKey.Namespace == "file" {
 		visitedKey.Text = canonicalFileSystemPathForWindows(visitedKey.Text)
 	}
+
+	// TODO: artificial delay to check measure is correct
+	// i := 1
+	// fmt.Println("delaying")
+	// for i <= 50000000 {
+	// 	// fmt.Println(i)
+	// 	i++
+	// }
+	// fmt.Println("delaying ended", i)
 
 	// Only parse a given file path once
 	visited, ok := s.visited[visitedKey]
@@ -1497,6 +1513,7 @@ func (s *scanner) maybeParseFile(
 		inject:          inject,
 		skipResolve:     skipResolve,
 		uniqueKeyPrefix: s.uniqueKeyPrefix,
+		timer:           s.timer,
 	})
 
 	return visited.sourceIndex

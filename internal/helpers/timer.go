@@ -87,7 +87,7 @@ func (t *Timer) Log(log logger.Log) {
 			notes[top.index].Text = fmt.Sprintf("%s%s: %dms",
 				strings.Repeat("  ", indent),
 				top.name,
-				item.time.Sub(top.time).Milliseconds())
+				item.time.Sub(top.time).Microseconds())
 		}
 	}
 	log.AddIDWithNotes(logger.MsgID_None, logger.Info, nil, logger.Range{},
